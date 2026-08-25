@@ -3198,14 +3198,19 @@ export default function App() {
   }, []);
 
   const activeRecognitionRef = useRef(null);
+  const isVoiceModeActiveRef = useRef(false);
+  const isPlayingAudioRef = useRef(false);
 
   const stopVoice = () => {
+    isVoiceModeActiveRef.current = false;
+    isPlayingAudioRef.current = false;
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     if (activeRecognitionRef.current) {
       try { activeRecognitionRef.current.abort(); } catch (e) {}
     }
+    setIsListening(false);
     setIsPlayingAudio(false);
   };
 
@@ -3253,13 +3258,23 @@ export default function App() {
         try { activeRecognitionRef.current.abort(); } catch (e) {}
       }
 
+      isVoiceModeActiveRef.current = true;
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = false;
       rec.lang = 'en-IN';
 
       rec.onstart = () => setIsListening(true);
-      rec.onend = () => setIsListening(false);
+      rec.onend = () => {
+        setIsListening(false);
+        if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current) {
+          setTimeout(() => {
+            if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current) {
+              startListeningInternal();
+            }
+          }, 400);
+        }
+      };
       rec.onresult = (event) => {
         const speechText = event.results[0][0]?.transcript;
         if (speechText && speechText.trim()) {
@@ -3270,6 +3285,13 @@ export default function App() {
       rec.onerror = (e) => {
         console.warn("Speech recognition error:", e.error);
         setIsListening(false);
+        if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current && (e.error === 'no-speech' || e.error === 'aborted')) {
+          setTimeout(() => {
+            if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current) {
+              startListeningInternal();
+            }
+          }, 400);
+        }
       };
 
       activeRecognitionRef.current = rec;
@@ -3308,6 +3330,10 @@ export default function App() {
 
       let currentIndex = 0;
       setIsPlayingAudio(true);
+      isPlayingAudioRef.current = true;
+      if (autoListenAfter) {
+        isVoiceModeActiveRef.current = true;
+      }
 
       const speakNextSentence = () => {
         if (sentenceWatchdogTimerRef.current) {
@@ -3316,6 +3342,7 @@ export default function App() {
 
         if (currentIndex >= sentences.length) {
           setIsPlayingAudio(false);
+          isPlayingAudioRef.current = false;
           if (speechKeepAliveIntervalRef.current) {
             clearInterval(speechKeepAliveIntervalRef.current);
           }

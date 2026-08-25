@@ -3163,9 +3163,28 @@
     "description": "Direct owner John Doe contact at [REDACTED_PHONE]. Close to ITPL with private terrace.",
     "seller_note": "Direct owner John Doe contact at [REDACTED_PHONE]. Close to ITPL with private terrace.",
     "source_weight": 0.3,
+    "listing_id": "user_list_1159",
+    "availability_status": "Available",
+    "contact_type": "Platform Agent",
+    "contact_ref": "REF-user_list_1159"
+  },
+  {
+    "society_name": "Palace View Villa",
+    "locality": "Whitefield",
+    "city": "Bengaluru",
+    "listing_type": "rent",
+    "rent_inr": null,
+    "sale_price_inr": null,
+    "bedrooms": 4,
+    "bathrooms": 4,
+    "sqft": 2800,
+    "furnishing": "Semi-Furnished",
+    "description": "Direct owner John Doe contact at [REDACTED_PHONE]. Close to ITPL with private terrace.",
+    "seller_note": "Direct owner John Doe contact at [REDACTED_PHONE]. Close to ITPL with private terrace.",
+    "source_weight": 0.3,
     "contact_type": "Platform Agent",
     "contact_ref": "REF-UNKNOWN",
-    "listing_id": "user_list_1159",
+    "listing_id": "user_list_1160",
     "availability_status": "Available"
   }
 ]

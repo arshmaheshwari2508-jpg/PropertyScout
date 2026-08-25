@@ -3734,30 +3734,8 @@ export default function App() {
         return;
       }
 
-      // STEP 0: AI asks initial neighborhood question
-      if (currentStep === 0) {
-        if (extractedLocalities.length > 0) {
-          const locDisplay = extractedLocalities.join(' & ');
-          setBuyerData({ listingType: activePersona === 'Buyer' ? 'sale' : 'rent', locality: locDisplay, localities: extractedLocalities, maxBudget: null, bedrooms: specifiedBhk, isPenthouse: isPenthouse, familyPreferences: '' });
-          setSelectedLocality(locDisplay);
-
-          if (specifiedBhk) {
-            setBuyerStep(3);
-            const promptBudget = isPenthouse 
-              ? `Understood, a penthouse in ${locDisplay}! What is your maximum monthly rental budget in rupees?`
-              : `Understood, ${specifiedBhk} BHK in ${locDisplay}! What is your maximum monthly rental budget in rupees?`;
-            setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBudget }]);
-            if (triggerAudio) speakText(promptBudget, true);
-            return;
-          } else {
-            setBuyerStep(2);
-            const promptBhk = `Great! I'd be glad to help you find a property in ${locDisplay}. How many bedrooms (BHK) are you looking for — 1BHK, 2BHK, 3BHK, or a penthouse?`;
-            setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBhk }]);
-            if (triggerAudio) speakText(promptBhk, true);
-            return;
-          }
-        }
-
+      // STEP 0: AI asks initial neighborhood question if user hasn't specified any criteria yet
+      if (currentStep === 0 && extractedLocalities.length === 0 && !parsedPrice && !specifiedBhk && !isPenthouse) {
         setBuyerStep(1);
         const promptLocality = `Which neighborhood or locality in Bengaluru do you prefer? (For example, Koramangala, Indiranagar, HSR Layout, or Whitefield)`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
@@ -3765,93 +3743,23 @@ export default function App() {
         return;
       }
 
-      // STEP 1: User provides Locality -> AI asks Bedrooms (BHK)
-      if (currentStep === 1) {
-        const targetLocs = extractedLocalities.length > 0 ? extractedLocalities : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : []);
-        if (targetLocs.length === 0) {
-          triggerRepeatOrFallback("Which neighborhood or locality in Bengaluru do you prefer?");
-          return;
-        }
+      // DISCOVERY EXECUTION: Parse parameters & deliver suggested properties closing statement out loud!
+      const targetLocs = extractedLocalities.length > 0 
+        ? extractedLocalities 
+        : (currentData.localities && currentData.localities.length > 0 
+          ? currentData.localities 
+          : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : ['Koramangala']));
 
-        const locDisplay = targetLocs.join(' & ');
-        setBuyerData(prev => ({ ...prev, locality: locDisplay, localities: targetLocs }));
-        setBuyerStep(2);
-        setSelectedLocality(locDisplay);
-
-        const promptBedrooms = `Got it, ${locDisplay}! How many bedrooms (BHK) are you looking for — 1BHK, 2BHK, 3BHK, or a penthouse?`;
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBedrooms }]);
-        if (triggerAudio) speakText(promptBedrooms, true);
-        return;
-      }
-
-      // STEP 2: User provides Bedrooms (BHK) -> AI asks Monthly Budget
-      if (currentStep === 2) {
-        const bhk = specifiedBhk;
-        if (!bhk && !isPenthouse) {
-          triggerRepeatOrFallback("How many bedrooms (BHK) are you looking for — 1BHK, 2BHK, or 3BHK?");
-          return;
-        }
-
-        setBuyerData(prev => ({ ...prev, bedrooms: bhk, isPenthouse: isPenthouse }));
-        setBuyerStep(3);
-
-        const promptBudget = isPenthouse 
-          ? `Understood, a penthouse in ${currentData.locality || 'Bengaluru'}! What is your maximum monthly budget in rupees?`
-          : `Understood, ${bhk} BHK in ${currentData.locality || 'Bengaluru'}! What is your maximum monthly budget in rupees?`;
-
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBudget }]);
-        if (triggerAudio) speakText(promptBudget, true);
-        return;
-      }
-
-      // STEP 3: User provides Monthly Budget -> AI asks Specific Preferences
-      if (currentStep === 3) {
-        const finalPrice = parsedPrice;
-        const validPrice = finalPrice || 45000;
-        setBuyerData(prev => ({ ...prev, maxBudget: validPrice }));
-        setBuyerStep(4);
-
-        const promptPreferences = `Got it, around ${formatIndianCurrencyDisplay(validPrice, 'rent')}! Do you have any specific preferences — such as fully furnished layout, pet-friendly terms, or close to a hospital or metro station?`;
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptPreferences }]);
-        if (triggerAudio) speakText(promptPreferences, true);
-        return;
-      }
-
-      // STEP 4: Preferences Answered -> AI Executes Search & Speaks Ending Statement with Suggested Properties!
-      if (currentStep === 4) {
-        const targetLocs = currentData.localities || [currentData.locality || 'Koramangala'];
-        executeBuyerFilter({
-          localities: targetLocs,
-          locality: targetLocs.join(' & '),
-          listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
-          maxBudget: currentData.maxBudget,
-          bedrooms: currentData.bedrooms,
-          isPenthouse: currentData.isPenthouse || false,
-          familyPreferences: userQuery
-        });
-        return;
-      }
-
-      // STEP 5: Unlimited Post-Discovery Mode
-      if (currentStep === 5) {
-        if (extractedLocalities.length > 0) {
-          executeBuyerFilter({
-            localities: extractedLocalities,
-            locality: extractedLocalities.join(' & '),
-            listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
-            maxBudget: currentData.maxBudget,
-            bedrooms: currentData.bedrooms,
-            isPenthouse: currentData.isPenthouse || false,
-            familyPreferences: userQuery
-          });
-          return;
-        }
-
-        const followUpMsg = `I'm here to help! You can ask me to schedule a physical site visit, check metro station distance, compare properties, or explore another locality in Bengaluru.`;
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: followUpMsg }]);
-        if (triggerAudio) speakText(followUpMsg, true);
-        return;
-      }
+      executeBuyerFilter({
+        localities: targetLocs,
+        locality: targetLocs.join(' & '),
+        listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
+        maxBudget: parsedPrice || currentData.maxBudget,
+        bedrooms: specifiedBhk || currentData.bedrooms,
+        isPenthouse: isPenthouse || currentData.isPenthouse || false,
+        familyPreferences: userQuery
+      });
+      return;
     }
 
     // SELLER LISTING INTERVIEW

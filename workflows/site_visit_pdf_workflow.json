@@ -1,0 +1,140 @@
+{
+  "name": "Property Scout - Site Visit PDF & Email Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "site-visit-booked",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "id": "webhook-trigger",
+      "name": "Site Visit Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract payload from Webhook request body\nconst body = $input.item.json.body || $input.item.json;\n\nconst userName = body.user_name || 'Valued Renter';\nconst userEmail = body.user_email || 'renter@example.com';\nconst bookingId = body.booking_id || 'BK-' + Math.floor(100000 + Math.random() * 900000);\nconst bookingSlot = body.booking_slot || 'Pending Schedule Confirmation';\nconst shortlist = body.shortlist || [];\nconst citations = body.neighborhood_citations || [];\n\n// Generate Property Cards HTML\nconst listingCardsHtml = shortlist.map((item, index) => {\n  const amenitiesList = (item.amenities || []).map(a => `<span class=\"tag\">${a}</span>`).join(' ');\n  return `\n    <div class=\"card\">\n      <div class=\"card-header\">\n        <h3>${index + 1}. ${item.society_name || 'Premium Property'}</h3>\n        <span class=\"price\">₹${(item.rent_inr || 0).toLocaleString('en-IN')}/mo</span>\n      </div>\n      <p class=\"location\">📍 ${item.locality || 'Bengaluru'}, ${item.city || 'Bengaluru'}</p>\n      <div class=\"details\">\n        <div><strong>Bedrooms:</strong> ${item.bedrooms || 2} BHK</div>\n        <div><strong>Area:</strong> ${item.sqft || 'N/A'} sq.ft</div>\n        <div><strong>Furnishing:</strong> ${item.furnishing || 'Furnished'}</div>\n      </div>\n      ${item.commute_summary ? `<div class=\"info-box\">⏱️ <strong>Commute:</strong> ${item.commute_summary}</div>` : ''}\n      ${item.nearest_metro ? `<div class=\"info-box\">🚇 <strong>Nearest Metro:</strong> ${item.nearest_metro}</div>` : ''}\n      <div class=\"amenities\">${amenitiesList}</div>\n    </div>\n  `;\n}).join('');\n\n// Generate Citations List HTML\nconst citationsHtml = citations.map(c => `<li>${c}</li>`).join('');\n\n// Assemble Full HTML Document\nconst htmlContent = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <title>Property Shortlist Report - ${bookingId}</title>\n  <style>\n    body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1e293b; background: #f8fafc; margin: 0; padding: 30px; }\n    .container { max-width: 800px; margin: 0 auto; background: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }\n    .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; text-align: center; }\n    .header h1 { color: #0f172a; margin: 0 0 10px 0; font-size: 26px; }\n    .badge { display: inline-block; background: #2563eb; color: #ffffff; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 14px; }\n    .booking-box { background: #eff6ff; border-left: 4px solid #2563eb; padding: 15px 20px; margin-bottom: 30px; border-radius: 4px; }\n    .booking-box p { margin: 5px 0; font-size: 15px; }\n    .section-title { font-size: 20px; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; margin-top: 30px; }\n    .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #fafafa; }\n    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }\n    .card-header h3 { margin: 0; color: #1e293b; font-size: 18px; }\n    .price { font-size: 18px; font-weight: bold; color: #16a34a; }\n    .location { color: #64748b; font-size: 14px; margin-top: 0; }\n    .details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0; font-size: 14px; background: #ffffff; padding: 10px; border-radius: 6px; border: 1px solid #f1f5f9; }\n    .info-box { background: #f1f5f9; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; color: #334155; }\n    .amenities { margin-top: 10px; }\n    .tag { display: inline-block; background: #e2e8f0; color: #475569; padding: 3px 8px; border-radius: 4px; font-size: 12px; margin-right: 5px; margin-bottom: 5px; }\n    .citations { font-size: 13px; color: #64748b; background: #f8fafc; padding: 15px 20px; border-radius: 6px; }\n    .footer { text-align: center; font-size: 12px; color: #94a3b8; margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🏡 Voice-First AI Property Scout</h1>\n      <span class=\"badge\">Site Visit Shortlist Report</span>\n    </div>\n    \n    <div class=\"booking-box\">\n      <p><strong>Hi ${userName},</strong></p>\n      <p>Your site visit has been requested successfully!</p>\n      <p><strong>Booking Confirmation ID:</strong> ${bookingId}</p>\n      <p><strong>Requested Time Slot:</strong> ${bookingSlot}</p>\n    </div>\n\n    <h2 class=\"section-title\">📋 Shortlisted Properties (${shortlist.length})</h2>\n    ${listingCardsHtml.length > 0 ? listingCardsHtml : '<p>No listings shortlisted.</p>'}\n\n    ${citations.length > 0 ? `\n      <h2 class=\"section-title\">🔍 Verified Grounding & Citations</h2>\n      <div class=\"citations\">\n        <ul>${citationsHtml}</ul>\n      </div>\n    ` : ''}\n\n    <div class=\"footer\">\n      <p>Generated automatically by Voice-First AI Property Scout Engine • Grounded with OpenStreetMap MCP & Verified Real Estate Data</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    user_name: userName,\n    user_email: userEmail,\n    booking_id: bookingId,\n    booking_slot: bookingSlot,\n    shortlist_count: shortlist.length,\n    html_report: htmlContent\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        470,
+        300
+      ],
+      "id": "html-generator",
+      "name": "Generate HTML Report"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "html_report",
+        "binaryPropertyName": "data",
+        "fileName": "={{ 'Property_Shortlist_' + $json.booking_id + '.pdf' }}",
+        "mimeType": "application/pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1,
+      "position": [
+        690,
+        300
+      ],
+      "id": "pdf-converter",
+      "name": "Convert HTML to PDF Binary"
+    },
+    {
+      "parameters": {
+        "fromEmail": "scout@propertyscout.ai",
+        "toEmail": "={{ $json.user_email }}",
+        "subject": "={{ '🏡 Site Visit Confirmed! Property Shortlist Report [' + $json.booking_id + ']' }}",
+        "html": "=<h3>Hi {{ $json.user_name }},</h3><p>Your site visit has been scheduled! (Booking ID: <strong>{{ $json.booking_id }}</strong>)</p><p>We have generated your personalized property shortlist report based on your voice preferences. Please find your detailed PDF report attached to this email.</p><br><p>Best regards,<br><strong>Voice-First AI Property Scout Team</strong></p>",
+        "options": {
+          "attachments": "data"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        910,
+        300
+      ],
+      "id": "email-sender",
+      "name": "Send Email with PDF Attachment"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Site visit scheduled and PDF report emailed successfully.\",\n  \"booking_id\": \"{{ $node['html-generator'].json.booking_id }}\",\n  \"recipient\": \"{{ $node['html-generator'].json.user_email }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1130,
+        300
+      ],
+      "id": "respond-webhook",
+      "name": "Respond to API Webhook"
+    }
+  ],
+  "connections": {
+    "Site Visit Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Convert HTML to PDF Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert HTML to PDF Binary": {
+      "main": [
+        [
+          {
+            "node": "Send Email with PDF Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email with PDF Attachment": {
+      "main": [
+        [
+          {
+            "node": "Respond to API Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "id": "site-visit-pdf-workflow"
+}

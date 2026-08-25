@@ -1,0 +1,294 @@
+/* SCOUT.AI Luxury Design System with Dark & Light Themes */
+
+:root, [data-theme="dark"] {
+  /* Obsidian Cerulean Modern Palette (Based on Reference Design Image) */
+  --bg-canvas: #12151e;
+  --bg-surface: #171b26;
+  --bg-surface-hover: #1e2332;
+  --bg-card: #191e2b;
+  --border-subtle: rgba(142, 178, 235, 0.18);
+  --border-glow: rgba(142, 178, 235, 0.45);
+  
+  --text-primary: #ffffff;
+  --text-secondary: #9bb1c9;
+  --text-muted: #6f859c;
+  
+  /* Exact Palette Tokens from Reference Design */
+  --accent-blue-100: #8EB2EB;  /* Soft Pastel Cerulean */
+  --accent-blue-80: #78A1E2;   /* Medium Pastel Blue */
+  --accent-blue-60: #5C8BD6;   /* Deep Slate Blue */
+  
+  --accent-green-100: #BEEFEB; /* Soft Ice Mint */
+  --accent-green-80: #80D6C7;  /* Fresh Teal Mint */
+  --accent-green-60: #56B9A8;  /* Deep Mint */
+  
+  --accent-purple: #CC9DF1;    /* Soft Lavender Purple */
+  --accent-gold: #EED263;      /* Soft Pastel Amber Gold */
+  --accent-gold-light: #E5C443;
+  --accent-rose: #D1757E;      /* Soft Muted Coral Red */
+  --accent-orange: #DB8F57;    /* Soft Terracotta Orange */
+  
+  --accent-primary: var(--accent-blue-80);
+  --accent-secondary: var(--accent-green-80);
+  --accent-sapphire: var(--accent-blue-100);
+  --accent-emerald: var(--accent-green-80);
+  --accent-crimson: var(--accent-rose);
+  
+  --grid-color: rgba(142, 178, 235, 0.04);
+  --font-display: 'Outfit', 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-serif: 'Playfair Display', serif;
+  
+  --shadow-glow: 0 10px 30px rgba(120, 161, 226, 0.25);
+  --shadow-glass: 0 16px 40px rgba(0, 0, 0, 0.55);
+  
+  --hero-bg: linear-gradient(180deg, #171b26 0%, #12151e 100%);
+  --modal-bg: #171b26;
+  --input-bg: #12151e;
+}
+
+/* Permanent Dark Mode Enforcement */
+[data-theme="light"], [data-theme="daylight"] {
+  /* Alias to Dark Theme so light theme is permanently disabled */
+  --bg-canvas: #12151e;
+  --bg-surface: #171b26;
+  --bg-surface-hover: #1e2332;
+  --bg-card: #191e2b;
+  --border-subtle: rgba(142, 178, 235, 0.18);
+  --border-glow: rgba(142, 178, 235, 0.45);
+  --text-primary: #ffffff;
+  --text-secondary: #9bb1c9;
+  --text-muted: #6f859c;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.5;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.05) 0%, transparent 60%),
+    radial-gradient(circle at 85% 20%, rgba(29, 78, 216, 0.04) 0%, transparent 50%),
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  min-height: 100vh;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-gold);
+}
+
+/* Typography & Utility Classes */
+.font-mono { font-family: var(--font-mono); }
+.font-display { font-family: var(--font-display); }
+.font-serif { font-family: var(--font-serif); }
+
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  box-shadow: var(--shadow-glass);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel:hover {
+  border-color: rgba(217, 119, 6, 0.45);
+  box-shadow: 0 16px 35px rgba(217, 119, 6, 0.15);
+}
+
+/* LIGHT ROYAL BADGES */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-gold, .badge-amber {
+  background: rgba(238, 210, 99, 0.12);
+  color: var(--accent-gold);
+  border: 1px solid rgba(238, 210, 99, 0.35);
+}
+
+.badge-blue, .badge-indigo, .badge-sapphire, .badge-cyan {
+  background: rgba(142, 178, 235, 0.12);
+  color: var(--accent-blue-100);
+  border: 1px solid rgba(142, 178, 235, 0.3);
+}
+
+.badge-emerald {
+  background: rgba(128, 214, 199, 0.12);
+  color: var(--accent-green-80);
+  border: 1px solid rgba(128, 214, 199, 0.3);
+}
+
+.badge-rose, .badge-crimson, .badge-red {
+  background: rgba(209, 117, 126, 0.12);
+  color: var(--accent-rose);
+  border: 1px solid rgba(209, 117, 126, 0.3);
+}
+
+/* CERULEAN MODERN BUTTONS */
+.btn-primary {
+  background: linear-gradient(135deg, #78A1E2 0%, #5C8BD6 100%);
+  color: #12151e;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 18px rgba(120, 161, 226, 0.35);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #8EB2EB 0%, #78A1E2 100%);
+  box-shadow: 0 8px 24px rgba(142, 178, 235, 0.45);
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, #EED263 0%, #E5C443 100%);
+  color: #12151e;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 18px rgba(238, 210, 99, 0.35);
+}
+
+.btn-gold:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(238, 210, 99, 0.45);
+}
+
+.btn-secondary {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  background: var(--bg-surface-hover);
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.15);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(217, 119, 6, 0.2); }
+  50% { box-shadow: 0 0 28px rgba(217, 119, 6, 0.4); }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2.5s infinite ease-in-out;
+}
+
+@keyframes waveBar {
+  0%, 100% { height: 6px; }
+  50% { height: 26px; }
+}
+
+.wave-bar {
+  width: 4px;
+  background: linear-gradient(to top, var(--accent-gold), var(--accent-sapphire));
+  border-radius: 2px;
+  animation: waveBar 1.2s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(2) { animation-delay: 0.15s; }
+.wave-bar:nth-child(3) { animation-delay: 0.3s; }
+.wave-bar:nth-child(4) { animation-delay: 0.45s; }
+.wave-bar:nth-child(5) { animation-delay: 0.6s; }
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sapphire-gradient-text {
+  background: linear-gradient(135deg, var(--accent-sapphire) 0%, #3b82f6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Global Form & Text Field Dark Theme Adjustments */
+input, select, textarea {
+  color: var(--text-primary) !important;
+  background-color: var(--input-bg);
+}
+
+option {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* Chip Button Dark Theme Styling */
+.chip {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.775rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.chip:hover {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  background: var(--bg-surface-hover);
+}
+

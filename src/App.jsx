@@ -3710,7 +3710,7 @@ export default function App() {
         return;
       }
 
-      // 4. INSTANT DISCOVERY EXECUTION: Parse parameters & deliver suggested properties closing statement on turn 1!
+      // 4. INSTANT DISCOVERY EXECUTION: Check search criteria & deliver suggested properties closing statement!
       const isPenthouse = q.includes('penthouse');
       let specifiedBhk = null;
       if (q.includes('1bhk') || q.includes('1 bhk') || q.includes('1 bedroom')) specifiedBhk = 1;
@@ -3718,6 +3718,17 @@ export default function App() {
       else if (q.includes('3bhk') || q.includes('3 bhk') || q.includes('3 bedroom')) specifiedBhk = 3;
       else if (q.includes('4bhk') || q.includes('4 bhk') || q.includes('4 bedroom')) specifiedBhk = 4;
       else if (isPenthouse) specifiedBhk = 'penthouse';
+
+      const isGenericGreeting = q === 'hello' || q === 'hi' || q === 'hey' || q === 'namaste' || q === 'good morning' || q === 'good afternoon' || q === 'start' || q === 'help' || q === 'who are you' || q === 'what can you do';
+      const hasSearchCriteria = extractedLocalities.length > 0 || parsedPrice !== null || specifiedBhk !== null || isPenthouse || isSpecificSoftPref || q.includes('rent') || q.includes('flat') || q.includes('apartment') || q.includes('house') || q.includes('home');
+
+      // Prompt user for locality if no requirement is specified yet
+      if (isGenericGreeting || !hasSearchCriteria) {
+        const askMsg = `Hello! I'd be glad to help you find your ideal property in Bengaluru. Which neighborhood or locality do you prefer — for example, Koramangala, Indiranagar, HSR Layout, or Whitefield?`;
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: askMsg }]);
+        if (triggerAudio) speakText(askMsg, true);
+        return;
+      }
 
       const targetLocs = extractedLocalities.length > 0 
         ? extractedLocalities 

@@ -3650,266 +3650,71 @@ export default function App() {
     // Specific amenity/POI soft preference terms (hospital, doctor, clinic, metro, school, gym, etc.)
     const isSpecificSoftPref = q.includes('hospital') || q.includes('doctor') || q.includes('clinic') || q.includes('medical') || q.includes('health') || q.includes('metro') || q.includes('school') || q.includes('gym') || q.includes('park') || q.includes('furnished') || q.includes('pet') || q.includes('pets') || q.includes('dog') || q.includes('cat') || q.includes('balcony') || q.includes('pool') || q.includes('lift') || q.includes('security');
 
-    // BUYER & RENTER DISCOVERY INTERVIEW
+    // BUYER & RENTER INSTANT DISCOVERY (No 5-Question Blockade!)
     if (activePersona === 'Buyer' || activePersona === 'Renter') {
+      setUnrecognizedRepeatCount(0);
 
-      // SOFT PREFERENCES INTERCEPT (Hospital nearby, Metro, Gym, Furnished, etc.)
-      if (isSpecificSoftPref) {
-        setUnrecognizedRepeatCount(0);
-        const targetLocs = extractedLocalities.length > 0 
-          ? extractedLocalities 
-          : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : (currentData.localities || ['Koramangala']));
-        
-        executeBuyerFilter({
-          localities: targetLocs,
-          locality: targetLocs.join(' & '),
-          listingType: 'rent',
-          maxBudget: currentData.maxBudget || parsedPrice,
-          bedrooms: currentData.bedrooms || 2,
-          isPenthouse: currentData.isPenthouse || false,
-          familyPreferences: userQuery
-        });
+      // 0. Graceful Closing Intent (Thank you / Bye / Done)
+      const isClosingIntent = q.includes('thank') || q.includes('thanks') || q.includes('bye') || q.includes('that is all') || q.includes("that's all") || q.includes('nothing else') || q.includes('no thanks') || q.includes('done');
+      if (isClosingIntent) {
+        const closingMsg = `You're very welcome! I'm here 24/7 whenever you need to explore properties, check commute times, or book site visits in Bengaluru. Have a wonderful day!`;
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: closingMsg }]);
+        if (triggerAudio) speakText(closingMsg, false);
         return;
       }
 
-      // Step 0: User responds to "How should I help you today?"
-      if (currentStep === 0) {
-        setUnrecognizedRepeatCount(0);
-        const isExplicitRent = q.includes('rent') || q.includes('rental') || q.includes('kiraya') || q.includes('kiraye') || q.includes('lease') || q.includes('tenant') || q.includes('flat') || q.includes('apartment') || q.includes('house') || q.includes('home');
-
-        // Extract specified BHK if user gave BHK right away on step 0
-        const isPenthouse = q.includes('penthouse');
-        let specifiedBhk = null;
-        if (q.includes('1bhk') || q.includes('1 bhk') || q.includes('1 bedroom')) specifiedBhk = 1;
-        else if (q.includes('2bhk') || q.includes('2 bhk') || q.includes('2 bedroom')) specifiedBhk = 2;
-        else if (q.includes('3bhk') || q.includes('3 bhk') || q.includes('3 bedroom')) specifiedBhk = 3;
-        else if (q.includes('4bhk') || q.includes('4 bhk') || q.includes('4 bedroom')) specifiedBhk = 4;
-        else if (isPenthouse) specifiedBhk = 'penthouse';
-
-        // One-shot execution if user specified locality AND (budget OR BHK) right in Step 0
-        if (extractedLocalities.length > 0 && (parsedPrice || specifiedBhk)) {
-          const locDisplay = extractedLocalities.join(' & ');
-          const finalBhk = specifiedBhk || 2;
-          executeBuyerFilter({
-            localities: extractedLocalities,
-            locality: locDisplay,
-            listingType: 'rent',
-            maxBudget: parsedPrice,
-            bedrooms: isPenthouse ? 'penthouse' : finalBhk,
-            isPenthouse: isPenthouse,
-            familyPreferences: userQuery
-          });
+      // 1. Site Visit Booking Intercept
+      const isBookingIntent = q.includes('book') || q.includes('schedule') || q.includes('visit') || q.includes('yes') || q.includes('yeah') || q.includes('sure') || q.includes('ok') || q.includes('confirm') || q.includes('please') || q.includes('take me');
+      if (isBookingIntent && shortlist.length > 0) {
+        const targetProp = shortlist.find(p => p.society_name && q.includes(p.society_name.toLowerCase())) || shortlist[0];
+        if (targetProp) {
+          setBookingProperty(targetProp);
+          const bookMsg = `Great! I've opened the physical site visit booking calendar for ${targetProp.society_name} in ${targetProp.locality}. You can pick your preferred date and time slot with your assigned broker!`;
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: bookMsg }]);
+          if (triggerAudio) speakText(bookMsg, false);
           return;
         }
+      }
 
-        if (extractedLocalities.length > 0) {
-          const locDisplay = extractedLocalities.join(' & ');
-          if (specifiedBhk) {
-            setBuyerData({ listingType: 'rent', locality: locDisplay, localities: extractedLocalities, maxBudget: null, bedrooms: specifiedBhk, isPenthouse: isPenthouse, familyPreferences: '' });
-            setBuyerFilterType('rent');
-            setBuyerStep(3);
-            setSelectedLocality(locDisplay);
-
-            const promptBudget = isPenthouse 
-              ? `Understood, a penthouse in ${locDisplay}! What is your maximum monthly rental budget in rupees?`
-              : `Understood, ${specifiedBhk} BHK in ${locDisplay}! What is your maximum monthly rental budget in rupees?`;
-
-            setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBudget }]);
-            if (triggerAudio) speakText(promptBudget, true);
-            return;
-          } else {
-            setBuyerData({ listingType: 'rent', locality: locDisplay, localities: extractedLocalities, maxBudget: null, bedrooms: null, isPenthouse: false, familyPreferences: '' });
-            setBuyerFilterType('rent');
-            setBuyerStep(2);
-            setSelectedLocality(locDisplay);
-
-            const promptBhk = `Great! I'd be glad to help you find a rental property in ${locDisplay}. How many bedrooms (BHK) are you looking for — 1BHK, 2BHK, 3BHK, or a penthouse?`;
-            setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBhk }]);
-            if (triggerAudio) speakText(promptBhk, true);
-            return;
-          }
-        }
-
-        if (isExplicitRent) {
-          setBuyerData({ listingType: 'rent', locality: '', localities: [], maxBudget: null, bedrooms: null, familyPreferences: '' });
-          setBuyerFilterType('rent');
-          setBuyerStep(1);
-
-          const promptLocality = `Which neighborhood or locality in Bengaluru do you prefer? (For example, Koramangala or Indiranagar)`;
-          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
-          if (triggerAudio) speakText(promptLocality, true);
-          return;
-        }
-
-        // Non-rent / unmatched intent fallback
-        const declineMsg = "We can't help you with this. Our platform currently specializes exclusively in verified rental property discovery in Bengaluru.";
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: declineMsg }]);
-        if (triggerAudio) speakText(declineMsg, false);
+      // 2. Spatial / Transit Intercept
+      if (q.includes('metro') || q.includes('distance') || q.includes('station')) {
+        const metroMsg = `The nearest Namma Metro station to ${selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala'} is Indiranagar Metro Station on the Purple Line, located under 1 km away.`;
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: metroMsg }]);
+        if (triggerAudio) speakText(metroMsg, true);
         return;
       }
 
-      // One-shot search resolution when user specifies locality AND (budget OR BHK OR penthouse) in one query
-      if (extractedLocalities.length > 0 && (parsedPrice || q.includes('1bhk') || q.includes('2bhk') || q.includes('3bhk') || q.includes('4bhk') || q.includes('penthouse'))) {
-        setUnrecognizedRepeatCount(0);
-        const isPenthouse = q.includes('penthouse');
-        const bhk = q.includes('1bhk') || q.includes('1 bhk') ? 1 : (q.includes('3bhk') || q.includes('3 bhk') ? 3 : (q.includes('4bhk') || q.includes('4 bhk') ? 4 : 2));
-        
-        executeBuyerFilter({
-          localities: extractedLocalities,
-          locality: extractedLocalities.join(' & '),
-          listingType: 'rent',
-          maxBudget: parsedPrice,
-          bedrooms: isPenthouse ? 'penthouse' : bhk,
-          isPenthouse: isPenthouse
-        });
+      // 3. Crime & Safety Telemetry Intercept
+      if (q.includes('safe') || q.includes('safety') || q.includes('crime') || q.includes('police')) {
+        const safetyMsg = `${selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala'} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records.`;
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: safetyMsg }]);
+        if (triggerAudio) speakText(safetyMsg, true);
         return;
       }
 
-      // Step 1: User specifies Locality -> AI asks Bedrooms (BHK)
-      if (currentStep === 1) {
-        const targetLocs = extractedLocalities.length > 0 ? extractedLocalities : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : []);
+      // 4. INSTANT DISCOVERY EXECUTION: Parse parameters & deliver suggested properties closing statement on turn 1!
+      const isPenthouse = q.includes('penthouse');
+      let specifiedBhk = null;
+      if (q.includes('1bhk') || q.includes('1 bhk') || q.includes('1 bedroom')) specifiedBhk = 1;
+      else if (q.includes('2bhk') || q.includes('2 bhk') || q.includes('2 bedroom')) specifiedBhk = 2;
+      else if (q.includes('3bhk') || q.includes('3 bhk') || q.includes('3 bedroom')) specifiedBhk = 3;
+      else if (q.includes('4bhk') || q.includes('4 bhk') || q.includes('4 bedroom')) specifiedBhk = 4;
+      else if (isPenthouse) specifiedBhk = 'penthouse';
 
-        if (targetLocs.length === 0) {
-          triggerRepeatOrFallback("I didn't get that, can you please repeat your preferred locality?");
-          return;
-        }
+      const targetLocs = extractedLocalities.length > 0 
+        ? extractedLocalities 
+        : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : (currentData.localities || ['Koramangala']));
 
-        setUnrecognizedRepeatCount(0);
-        const locDisplay = targetLocs.join(' & ');
-        setBuyerData(prev => ({ ...prev, locality: locDisplay, localities: targetLocs }));
-        setBuyerStep(2);
-        setSelectedLocality(locDisplay);
-
-        const promptBedrooms = `Got it, ${targetLocs.join(' and ')}! How many bedrooms (BHK) are you looking for — 1BHK, 2BHK, 3BHK, or a penthouse?`;
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBedrooms }]);
-        if (triggerAudio) speakText(promptBedrooms, true);
-        return;
-      }
-
-      // Step 2: User specifies Bedrooms (BHK) or Penthouse -> AI asks Monthly Budget
-      if (currentStep === 2) {
-        const isPenthouse = q.includes('penthouse');
-        let bhk = null;
-        if (q.includes('1bhk') || q.includes('1 bhk') || q.includes('1 bedroom') || q.includes('one')) bhk = 1;
-        else if (q.includes('2bhk') || q.includes('2 bhk') || q.includes('2 bedroom') || q.includes('two')) bhk = 2;
-        else if (q.includes('3bhk') || q.includes('3 bhk') || q.includes('3 bedroom') || q.includes('three')) bhk = 3;
-        else if (q.includes('4bhk') || q.includes('4 bhk') || q.includes('4 bedroom') || q.includes('four')) bhk = 4;
-        else if (isPenthouse) bhk = 'penthouse';
-
-        if (!bhk && !isPenthouse) {
-          triggerRepeatOrFallback("I didn't get that, can you please repeat how many bedrooms (BHK) you need?");
-          return;
-        }
-
-        setUnrecognizedRepeatCount(0);
-        setBuyerData(prev => ({ ...prev, bedrooms: bhk, isPenthouse: isPenthouse }));
-        setBuyerStep(3);
-
-        const promptBudget = isPenthouse 
-          ? `Understood, a penthouse in ${currentData.locality || 'Bengaluru'}! What is your maximum monthly rental budget in rupees?`
-          : `Understood, ${bhk} BHK in ${currentData.locality || 'Bengaluru'}! What is your maximum monthly rental budget in rupees?`;
-
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptBudget }]);
-        if (triggerAudio) speakText(promptBudget, true);
-        return;
-      }
-
-      // Step 3: User specifies Monthly Budget -> AI asks Specific Preferences
-      if (currentStep === 3) {
-        const finalPrice = parsedPrice;
-
-        if (!finalPrice && !q.includes('any') && !q.includes('budget')) {
-          triggerRepeatOrFallback("I didn't get that, can you please repeat your maximum monthly budget?");
-          return;
-        }
-
-        setUnrecognizedRepeatCount(0);
-        const validPrice = finalPrice || 45000;
-        setBuyerData(prev => ({ ...prev, maxBudget: validPrice }));
-        setBuyerStep(4);
-
-        const promptPreferences = `Got it, around ${formatIndianCurrencyDisplay(validPrice, 'rent')}! Do you have any specific preferences — such as fully furnished layout, pet-friendly terms, low security deposit, or close to a hospital or metro station?`;
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptPreferences }]);
-        if (triggerAudio) speakText(promptPreferences, true);
-        return;
-      }
-
-      // Step 4: User answers preferences -> AI executes search & delivers final verdict!
-      if (currentStep === 4) {
-        const targetLocs = currentData.localities || [currentData.locality || 'Koramangala'];
-        executeBuyerFilter({
-          localities: targetLocs,
-          locality: targetLocs.join(' & '),
-          listingType: 'rent',
-          maxBudget: currentData.maxBudget,
-          bedrooms: currentData.bedrooms,
-          isPenthouse: currentData.isPenthouse || false,
-          familyPreferences: userQuery
-        });
-        return;
-      }
-
-      // Step 5: Post-Discovery Completed Mode — handles site visit bookings, spatial telemetry, closing messages, and unlimited follow-up turns!
-      if (currentStep === 5) {
-        // 0. Graceful Closing Intent (Thank you / Bye / Done)
-        const isClosingIntent = q.includes('thank') || q.includes('thanks') || q.includes('bye') || q.includes('that is all') || q.includes("that's all") || q.includes('nothing else') || q.includes('no thanks') || q.includes('done');
-        if (isClosingIntent) {
-          const closingMsg = `You're very welcome! I'm here 24/7 whenever you need to explore properties, check commute times, or book site visits in Bengaluru. Have a wonderful day!`;
-          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: closingMsg }]);
-          if (triggerAudio) speakText(closingMsg, false);
-          return;
-        }
-
-        // 1. Site Visit Booking Intercept
-        const isBookingIntent = q.includes('book') || q.includes('schedule') || q.includes('visit') || q.includes('yes') || q.includes('yeah') || q.includes('sure') || q.includes('ok') || q.includes('confirm') || q.includes('please') || q.includes('take me');
-
-        if (isBookingIntent) {
-          const targetProp = shortlist.find(p => p.society_name && q.includes(p.society_name.toLowerCase())) || shortlist[0];
-          if (targetProp) {
-            setBookingProperty(targetProp);
-            const bookMsg = `Great! I've opened the physical site visit booking calendar for ${targetProp.society_name} in ${targetProp.locality}. You can pick your preferred date and time slot with your assigned broker!`;
-            setTranscriptHistory(prev => [...prev, { role: 'assistant', text: bookMsg }]);
-            if (triggerAudio) speakText(bookMsg, false);
-            return;
-          }
-        }
-
-        // 2. Spatial / Transit Intercept
-        if (q.includes('metro') || q.includes('distance') || q.includes('station')) {
-          const metroMsg = `The nearest Namma Metro station to ${selectedLocality} is Indiranagar Metro Station on the Purple Line, located under 1 km away.`;
-          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: metroMsg }]);
-          if (triggerAudio) speakText(metroMsg, true);
-          return;
-        }
-
-        // 3. Crime & Safety Telemetry Intercept
-        if (q.includes('safe') || q.includes('safety') || q.includes('crime') || q.includes('police')) {
-          const safetyMsg = `${selectedLocality} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records.`;
-          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: safetyMsg }]);
-          if (triggerAudio) speakText(safetyMsg, true);
-          return;
-        }
-
-        // 4. Locality Search Intercept
-        if (extractedLocalities.length > 0) {
-          executeBuyerFilter({
-            localities: extractedLocalities,
-            locality: extractedLocalities.join(' & '),
-            listingType: 'rent',
-            maxBudget: currentData.maxBudget,
-            bedrooms: currentData.bedrooms,
-            isPenthouse: currentData.isPenthouse || false,
-            familyPreferences: userQuery
-          });
-          return;
-        }
-
-        // 5. Unlimited Conversational Follow-up Response
-        const followUpMsg = `I'm here to help! You can ask me to schedule a physical site visit, check metro station distance, compare properties, or explore another locality in Bengaluru.`;
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: followUpMsg }]);
-        if (triggerAudio) speakText(followUpMsg, true);
-        return;
-      }
+      executeBuyerFilter({
+        localities: targetLocs,
+        locality: targetLocs.join(' & '),
+        listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
+        maxBudget: parsedPrice || currentData.maxBudget,
+        bedrooms: specifiedBhk || currentData.bedrooms || 2,
+        isPenthouse: isPenthouse || currentData.isPenthouse || false,
+        familyPreferences: userQuery
+      });
+      return;
     }
 
     // SELLER LISTING INTERVIEW

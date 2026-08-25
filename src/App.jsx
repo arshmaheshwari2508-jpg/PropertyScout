@@ -3621,15 +3621,7 @@ export default function App() {
       return;
     }
 
-    // 1. NON-RENT / BUY / PURCHASE / SELL DEJECTION INTERCEPT
-    const isNonRentIntent = q.includes('buy') || q.includes('purchase') || q.includes('khareed') || q.includes('sale') || q.includes('sell') || q.includes('bech') || q.includes('invest') || q.includes('commercial') || q.includes('plot') || q.includes('land');
 
-    if (isNonRentIntent && !q.includes('rent')) {
-      const declineMsg = "We can't help you with this. Our platform currently specializes exclusively in verified rental property discovery in Bengaluru.";
-      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: declineMsg }]);
-      if (triggerAudio) speakText(declineMsg, false);
-      return;
-    }
 
     // Helper for handling unrecognized speech input: asks to repeat twice, then prompts user to type in chat window
     const triggerRepeatOrFallback = (promptMsg) => {

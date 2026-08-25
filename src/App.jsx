@@ -3435,10 +3435,7 @@ export default function App() {
     setActiveView('command');
 
     setBuyerFilterType('rent');
-    const greeting = "Welcome to Property Scout! How should I help you today?";
-
-    setTranscriptHistory([{ role: 'assistant', text: greeting }]);
-    speakText(greeting, true);
+    startListening(true);
   };
 
   const handlePersonaChange = (newPersona) => {

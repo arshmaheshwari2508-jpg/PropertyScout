@@ -3679,8 +3679,8 @@ export default function App() {
         return;
       }
 
-      // 1. Site Visit Booking Intercept
-      const isBookingIntent = q.includes('book') || q.includes('schedule') || q.includes('visit') || q.includes('yes') || q.includes('yeah') || q.includes('sure') || q.includes('ok') || q.includes('confirm') || q.includes('please') || q.includes('take me');
+      // 1. Site Visit Booking Intercept (Precise Intent Matching)
+      const isBookingIntent = q.includes('book site visit') || q.includes('schedule visit') || q.includes('book visit') || q.includes('physical visit') || q.includes('book appointment') || (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour')));
       if (isBookingIntent && shortlist.length > 0) {
         const targetProp = shortlist.find(p => p.society_name && q.includes(p.society_name.toLowerCase())) || shortlist[0];
         if (targetProp) {
@@ -3694,7 +3694,8 @@ export default function App() {
 
       // 2. Spatial / Transit Intercept
       if (q.includes('metro') || q.includes('distance') || q.includes('station')) {
-        const metroMsg = `The nearest Namma Metro station to ${selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala'} is Indiranagar Metro Station on the Purple Line, located under 1 km away.`;
+        const targetLoc = extractedLocalities.length > 0 ? extractedLocalities[0] : (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala');
+        const metroMsg = `The nearest Namma Metro station to ${targetLoc} is Indiranagar Metro Station on the Purple Line, located under 1 km away.`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: metroMsg }]);
         if (triggerAudio) speakText(metroMsg, true);
         return;
@@ -3702,7 +3703,8 @@ export default function App() {
 
       // 3. Crime & Safety Telemetry Intercept
       if (q.includes('safe') || q.includes('safety') || q.includes('crime') || q.includes('police')) {
-        const safetyMsg = `${selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala'} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records.`;
+        const targetLoc = extractedLocalities.length > 0 ? extractedLocalities[0] : (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala');
+        const safetyMsg = `${targetLoc} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records.`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: safetyMsg }]);
         if (triggerAudio) speakText(safetyMsg, true);
         return;
@@ -3719,15 +3721,15 @@ export default function App() {
 
       const targetLocs = extractedLocalities.length > 0 
         ? extractedLocalities 
-        : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : (currentData.localities || ['Koramangala']));
+        : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : []);
 
       executeBuyerFilter({
         localities: targetLocs,
-        locality: targetLocs.join(' & '),
+        locality: targetLocs.length > 0 ? targetLocs.join(' & ') : 'All Bengaluru',
         listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
-        maxBudget: parsedPrice || currentData.maxBudget,
-        bedrooms: specifiedBhk || currentData.bedrooms || 2,
-        isPenthouse: isPenthouse || currentData.isPenthouse || false,
+        maxBudget: parsedPrice || null,
+        bedrooms: specifiedBhk,
+        isPenthouse: isPenthouse,
         familyPreferences: userQuery
       });
       return;

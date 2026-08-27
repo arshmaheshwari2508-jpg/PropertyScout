@@ -2,7 +2,7 @@
 End-to-End Conversational Skills Evaluation Test Suite for Voice-First AI Property Scout.
 
 Evaluates:
-  1. Multi-Persona Workspace Switching (Renter vs Buyer vs Seller/Broker).
+  1. Multi-Persona Workspace Switching (Renter vs Seller/Broker).
   2. Intent Routing & 4-Layer Separation (Listings, OSM MCP, RAG, Safety).
   3. Non-Binary Safety Policy Guardrails & Citation Resolution.
   4. Negative Grounding Fallback ("I don't have enough verified information...").
@@ -38,15 +38,15 @@ class TestConversationalSkills:
         """Validates dynamic persona workspace switching and context state."""
         assert self.manager.current_persona == PersonaRole.RENTER
         
-        # Switch to Buyer
-        res_buyer = self.manager.switch_persona("Switch to Buyer Mode")
-        assert self.manager.current_persona == PersonaRole.BUYER
-        assert "Buyer Mode" in res_buyer["final_answer"]
+        # Purchase / Buyer mode request (Declined: rental-only platform)
+        res_purchase = self.manager.switch_persona("Switch to Buyer Mode")
+        assert self.manager.current_persona == PersonaRole.RENTER
+        assert "rental property discovery" in res_purchase["final_answer"].lower()
         
         # Switch to Seller
         res_seller = self.manager.switch_persona("Switch to Seller Mode")
         assert self.manager.current_persona == PersonaRole.SELLER_BROKER
-        assert "Seller & Broker" in res_seller["final_answer"]
+        assert "Landlord & Seller" in res_seller["final_answer"]
 
         # Switch back to Renter
         res_renter = self.manager.switch_persona("Switch back to Renter Mode")

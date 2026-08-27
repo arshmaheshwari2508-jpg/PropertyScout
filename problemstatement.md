@@ -1,17 +1,16 @@
 # Voice-First AI Property Scout — Problem Statement
 
-> **Objective:** Build a voice-first AI property scout that understands a renter, buyer, seller, or broker's spoken input, shortlists real listings or lists new properties, adapts its conversational agent persona based on the active user role, explains decisions using verified RAG grounding (from structured `localities.jsonl`, `sources.jsonl`, and `safety_sources.jsonl` files), strictly separates spatial queries to OpenStreetMap MCP, and books site visits or logs new property listings, supported by a full-fledged companion UI with platform information.
+> **Objective:** Build a voice-first AI property scout that understands a renter, landlord, or broker's spoken input, shortlists real rental listings or lists new rental properties, adapts its conversational agent persona based on the active user role (Renter Mode vs Landlord/Seller Mode), explains decisions using verified RAG grounding (from structured `localities.jsonl`, `sources.jsonl`, and `safety_sources.jsonl` files), strictly separates spatial queries to OpenStreetMap MCP, and books site visits or logs new property listings, supported by a full-fledged companion UI with platform information.
 
 ---
 
 ## 📌 Problem Statement
 
-People don't struggle to find or post listings. They struggle to evaluate whether a listing actually fits their life and goals:
+People don't struggle to find or post rental listings. They struggle to evaluate whether a listing actually fits their life and goals:
 - *Is the commute realistic during peak hours?*
 - *Is the area safe at night?*
 - *For Renters:* Is it worth paying extra rent for an extra room or better amenities?
-- *For Buyers:* Is the purchase price per sqft justified, and what is the expected appreciation or rental yield?
-- *For Sellers/Landlords/Brokers:* How to quickly list a property via voice and highlight custom amenities without creating biased/unverified claims for prospective buyers/renters?
+- *For Landlords/Sellers/Brokers:* How to quickly list a rental property via voice and highlight custom amenities without creating biased/unverified claims for prospective renters?
 
 Standard property portals present static search filters and unverified raw data, lacking conversational intelligence, role-based reasoning, strict separation of responsibilities, contextual neighborhood grounding, and transparent citation enforcement.
 
@@ -19,14 +18,13 @@ Standard property portals present static search filters and unverified raw data,
 
 ## 🎯 Task Overview
 
-You are required to build a voice-based AI assistant with a companion UI featuring **Multi-Persona Workspace Tabs (Buyer Mode vs Seller / Landlord / Broker Mode vs Renter Mode)**, **Strict 4-Source Separation Architecture**, and **Verified RAG Policy Enforcement** that:
+You are required to build a voice-based AI assistant with a companion UI featuring **Multi-Persona Workspace Tabs (Renter Mode vs Seller / Landlord / Broker Mode)**, **Strict 4-Source Separation Architecture**, and **Verified RAG Policy Enforcement** that:
 
 1. **Supports Multi-User Personas via Workspace Tabs:**
-   - **Buyer Mode:** Voice agent adapts to home buyers (focusing on total sale price, price/sqft, possession status, builder reputation, legal/RERA standing, and long-term ROI/appreciation).
-   - **Renter Mode:** Voice agent adapts to renters (focusing on monthly rent, security deposit, lock-in period, tenant restrictions, immediate availability, and fast shortlist comparison).
-   - **Seller / Landlord / Broker Mode:** Voice agent acts as an automated property intake assistant, collecting listing details via voice (*location, asking price/rent, BHK, sqft, furnishing, amenities*) AND capturing a **Seller Property Review/Highlights note**.
+   - **Renter Mode:** Voice agent adapts to renters (focusing on monthly rent, security deposit, lock-in period, tenant restrictions, immediate availability, and fast shortlist comparison). Home purchase/buying queries are out-of-scope; the platform specializes exclusively in verified rental property discovery.
+   - **Seller / Landlord / Broker Mode:** Voice agent acts as an automated property intake assistant, collecting listing details via voice (*location, asking monthly rent, BHK, sqft, furnishing, amenities*) AND capturing a **Seller Property Review/Highlights note**.
 2. **Implements Strict Separation of Responsibilities across 4 Data Layers:**
-   - **`bengaluru.rent`**: Source of truth for current property/listing data, rents, and availability. (RAG is NEVER used for current rents or listings).
+   - **`bengaluru.rent`**: Source of truth for current rental property/listing data, rents, and availability. (RAG is NEVER used for current rents or listings).
    - **`RAG Knowledge Base` (`localities.jsonl`, `sources.jsonl`, `Readme.md`)**: Source of truth for verified neighborhood context, history, development, and broad character.
    - **`Safety Sources` (`safety_sources.jsonl`)**: Source of truth for crime/safety evidence. (Binary "safe" or "unsafe" ratings are STRICTLY FORBIDDEN unless explicitly supported by crime stats).
    - **`OpenStreetMap MCP`**: Source of truth for transit, metro stations, exact distances, POIs, schools, hospitals, and parks. (RAG is NEVER used for exact distances or live transit).

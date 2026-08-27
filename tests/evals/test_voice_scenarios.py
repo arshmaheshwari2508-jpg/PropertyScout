@@ -28,15 +28,17 @@ class TestVoiceAgentScenarios:
         assert all(item["bedrooms"] == 2 for item in res["listings"])
 
     def test_scenario_2_one_shot_complete_query(self):
-        q = "Rent a 2BHK flat in Whitefield under 40000"
+        q = "Rent a 2BHK flat in Whitefield under 90000"
         res = self.rag_engine.process_query(q, active_locality="Whitefield", persona="Renter")
         assert res["intent"] == QueryIntent.LISTING_PRICING.value
         assert len(res["listings"]) > 0
 
-    def test_scenario_3_non_rental_intent(self):
+    def test_scenario_3_non_rental_purchase_intent_declined(self):
         q = "I want to buy a 3BHK villa in Koramangala"
         res = self.rag_engine.process_query(q, persona="Renter")
-        assert "sale" in res["grounded_context"].lower() or res["intent"] == QueryIntent.LISTING_PRICING.value
+        assert res["intent"] == QueryIntent.OUT_OF_SCOPE.value
+        assert "rental property discovery" in res["final_answer"].lower()
+        assert len(res["listings"]) == 0
 
     def test_scenario_4_out_of_scope_off_topic_rejection(self):
         off_topic_queries = [
@@ -84,3 +86,20 @@ class TestVoiceAgentScenarios:
     def test_scenario_10_zero_match_criteria_fallback(self):
         zero_match = self.db.filter_listings(locality="Indiranagar", listing_type="rent", max_price=1000)
         assert len(zero_match) == 0
+
+    def test_bhk_verdict_and_failure_phrasing_regression(self):
+        """Regression test for BHK response phrasing (success and failure cases)."""
+        # Success case
+        res_success = self.rag_engine.process_query("Find 2BHK rental in Indiranagar under 50000", active_locality="Indiranagar")
+        assert "Here are the suggested properties for you:" in res_success["final_answer"]
+
+        # Failure case (unrealistic budget of 1000 INR)
+        res_fail = self.rag_engine.process_query("Find 2BHK rental in Indiranagar under 1000", active_locality="Indiranagar")
+        assert "Sorry, no properties found" in res_fail["final_answer"]
+
+    def test_locality_context_metro_requirement_regression(self):
+        """Regression test for locality context preserving active locality (Indiranagar) instead of hardcoding Koramangala."""
+        res_metro = self.rag_engine.process_query("What is the nearest metro station?", active_locality="Indiranagar")
+        assert "Indiranagar" in res_metro["final_answer"]
+        assert "Koramangala" not in res_metro["final_answer"]
+        assert "Indiranagar Metro Station" in res_metro["final_answer"]

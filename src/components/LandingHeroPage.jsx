@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { 
   Sparkles, Building2, UserCheck, ShieldCheck, MapPin, ArrowRight, TrendingUp, CheckCircle2, Navigation, Compass, Info, HelpCircle, Key, Mic, Eye, Camera, Star, Award, Zap, ChevronRight, Home, Heart, Layers, Mail, Phone, History, ChevronDown, Gem, Calendar
 } from 'lucide-react';
+import PropertyScoutMascot from './PropertyScoutMascot';
 
 export default function LandingHeroPage({ onSelectRole, onOpenModal, allProperties = [], onBookVisit }) {
   const [activeTab, setActiveTab] = useState('All');
@@ -72,213 +73,186 @@ export default function LandingHeroPage({ onSelectRole, onOpenModal, allProperti
     }
   ];
 
+  const propertyCount = showcaseProperties.length || 148;
+  const featuredForHero = showcaseProperties.slice(0, 2);
+
+  const highlights = [
+    {
+      icon: Mic,
+      iconClass: 'landing-highlight-icon--blue',
+      iconColor: 'var(--accent-blue-100)',
+      title: 'Voice-First AI',
+      desc: 'Speak naturally in English or Hindi',
+    },
+    {
+      icon: ShieldCheck,
+      iconClass: 'landing-highlight-icon--green',
+      iconColor: 'var(--accent-green-80)',
+      title: 'Verified Rentals',
+      desc: `${propertyCount}+ listings on bengaluru.rent`,
+    },
+    {
+      icon: Navigation,
+      iconClass: 'landing-highlight-icon--purple',
+      iconColor: 'var(--accent-purple)',
+      title: 'Metro & Safety Intel',
+      desc: 'Live OSM distances & crime data',
+    },
+    {
+      icon: Calendar,
+      iconClass: 'landing-highlight-icon--gold',
+      iconColor: 'var(--accent-gold)',
+      title: 'Instant Site Visits',
+      desc: 'Book tours with verified brokers',
+    },
+  ];
+
+  const scrollToListings = () => {
+    document.getElementById('landing-listings')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
-    <div style={{
-      maxWidth: '1280px',
-      margin: '0 auto',
-      padding: '16px 20px 60px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '36px'
-    }}>
+    <div className="landing-page">
       
-      {/* ABOVE-THE-FOLD HERO BANNER & ROLE SELECTION GATEWAY */}
-      <div style={{
-        position: 'relative',
-        borderRadius: '24px',
-        background: 'var(--hero-bg)',
-        border: '1px solid var(--border-subtle)',
-        boxShadow: 'var(--shadow-glass)',
-        padding: '28px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        gap: '20px'
-      }}>
-        
-        {/* CENTERED PLATFORM NAME & BRAND HERO HEADER */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          textAlign: 'center',
-          maxWidth: '850px',
-          margin: '0 auto',
-          gap: '10px'
-        }}>
-          {/* Top Pill */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(142, 178, 235, 0.12)',
-            border: '1px solid rgba(142, 178, 235, 0.3)',
-            padding: '5px 16px',
-            borderRadius: '9999px'
-          }}>
-            <Sparkles size={15} color="var(--accent-blue-100)" />
-            <span style={{ fontSize: '0.775rem', fontWeight: 800, color: 'var(--accent-blue-100)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Voice-First AI Real Estate Scout • Bengaluru
-            </span>
-          </div>
-
-          {/* SLEEK PLATFORM TITLE WITH REDUCED FONT SIZE */}
-          <h1 className="font-display" style={{
-            fontSize: '2.8rem',
-            fontWeight: 900,
-            lineHeight: 1.1,
-            letterSpacing: '-0.02em',
-            margin: '4px 0 2px 0'
-          }}>
-            <span style={{ 
-              background: 'linear-gradient(135deg, #ffffff 0%, #8EB2EB 50%, #80D6C7 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              filter: 'drop-shadow(0 4px 18px rgba(120, 161, 226, 0.35))'
-            }}>
-              SCOUT.AI
-            </span>
-          </h1>
-
-          <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px 0' }}>
-            Find Your Dream Rental Home
-          </h2>
-
-          <p style={{
-            fontSize: '0.9rem',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.5,
-            maxWidth: '620px',
-            fontWeight: 500
-          }}>
-            Experience Bengaluru's premier Voice AI Property Assistant powered by real-time spatial telemetry & verified property listings.
-          </p>
-
-          {/* Voice Agent Mascot Feature Box */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
-            gap: '16px',
-            marginTop: '6px'
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '16px',
-              padding: '8px 14px'
-            }}>
-              <img
-                src="/mascot.png"
-                alt="SCOUT AI Agent Mascot"
-                style={{
-                  width: '72px',
-                  height: '72px',
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0 6px 14px rgba(120, 161, 226, 0.35))'
-                }}
-              />
-              <div style={{ textAlign: 'left' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--accent-blue-100)', display: 'block' }}>
-                  🤖 SCOUT Voice Agent Active
-                </span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  Speak naturally to find flats or apartments
-                </span>
-              </div>
+      {/* ABOVE-THE-FOLD HERO — Launch CTA + highlights visible without scrolling */}
+      <section className="landing-hero">
+        <div className="landing-hero-grid">
+          {/* Left: copy, highlights, launch */}
+          <div className="landing-hero-copy">
+            <div className="landing-eyebrow">
+              <Sparkles size={14} />
+              Bengaluru&apos;s Voice-First Rental Scout
             </div>
 
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'center',
-              gap: '8px'
-            }}>
+            <h1 className="landing-title">
+              <span className="landing-title-gradient">SCOUT.AI</span>
+              <br />
+              <span style={{ color: 'var(--text-primary)', fontSize: '0.72em', fontWeight: 800 }}>
+                Find Your Dream Rental Home
+              </span>
+            </h1>
+
+            <p className="landing-subtitle">
+              Skip the endless scrolling. Tell our AI what you need — locality, budget, BHK — and get verified Bengaluru rentals in seconds.
+            </p>
+
+            <div className="landing-cta-row">
+              <button
+                type="button"
+                className="landing-launch-btn scout-launch-cta"
+                onClick={() => onSelectRole('Renter')}
+              >
+                <Mic size={22} />
+                Launch AI Agent
+                <ArrowRight size={20} />
+              </button>
+              <button type="button" className="landing-scroll-btn" onClick={scrollToListings}>
+                <Building2 size={16} />
+                Browse {propertyCount}+ Listings
+              </button>
+            </div>
+
+            <div className="landing-highlights">
+              {highlights.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.title} className="landing-highlight-card">
+                    <div className={`landing-highlight-icon ${item.iconClass}`}>
+                      <Icon size={18} color={item.iconColor} />
+                    </div>
+                    <div>
+                      <p className="landing-highlight-title">{item.title}</p>
+                      <p className="landing-highlight-desc">{item.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="landing-prompt-chips">
               {[
-                "Rent 2BHK flat in Indiranagar under ₹45,000/mo",
-                "Show luxury 3BHK in Whitefield near Metro",
-                "Rent 2BHK in Koramangala with low deposit"
-              ].map((promptText, idx) => (
+                '2BHK in Indiranagar under ₹45k',
+                'Near Metro in Whitefield',
+                'Pet-friendly Koramangala',
+              ].map((promptText) => (
                 <button
-                  key={idx}
+                  key={promptText}
+                  type="button"
                   onClick={() => onSelectRole('Renter')}
                   className="chip"
-                  style={{
-                    fontSize: '0.775rem',
-                    padding: '7px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
                 >
-                  <Sparkles size={12} color="var(--accent-blue-100)" />
+                  <Sparkles size={11} color="var(--accent-blue-100)" />
                   {promptText}
                 </button>
               ))}
             </div>
-          </div>
-        </div>
 
-        {/* SINGLE CLEAN RENTAL SCOUT LAUNCHER CARD */}
-        <div style={{ width: '100%', maxWidth: '850px', marginTop: '6px' }}>
-          <div
-            onClick={() => onSelectRole('Renter')}
-            className="glass-panel"
-            style={{
-              padding: '18px 26px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '20px',
-              cursor: 'pointer',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '18px',
-              background: 'var(--bg-surface)',
-              textAlign: 'left'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '14px',
-                background: 'rgba(142, 178, 235, 0.12)',
-                border: '1px solid rgba(142, 178, 235, 0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <Key size={26} color="var(--accent-blue-100)" />
+            <div className="landing-stats-bar">
+              <div className="landing-stat">
+                <span className="landing-stat-value">{propertyCount}+</span>
+                <span className="landing-stat-label">Verified Rentals</span>
               </div>
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h3 className="font-display" style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Voice-First AI Rental Property Scout
-                  </h3>
-                  <span className="badge badge-blue" style={{ fontSize: '0.675rem' }}>Verified Scout</span>
-                </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Search verified 1BHK, 2BHK, 3BHK flats & apartments on rent across Bengaluru.
-                </p>
+              <div className="landing-stat">
+                <span className="landing-stat-value">12+</span>
+                <span className="landing-stat-label">Localities</span>
+              </div>
+              <div className="landing-stat">
+                <span className="landing-stat-value">24/7</span>
+                <span className="landing-stat-label">Voice Assistant</span>
+              </div>
+              <div className="landing-stat">
+                <span className="landing-stat-value">100%</span>
+                <span className="landing-stat-label">Rental Only</span>
               </div>
             </div>
+          </div>
 
-            <button className="btn-primary" style={{ padding: '9px 18px', fontSize: '0.875rem', flexShrink: 0 }}>
-              Launch AI Agent <ArrowRight size={16} />
-            </button>
+          {/* Right: mascot + floating property previews */}
+          <div className="landing-hero-visual">
+            {featuredForHero[0] && (
+              <div className="landing-float-card landing-float-card--left">
+                <img src={featuredForHero[0].image} alt="" />
+                <div className="landing-float-card-body">
+                  <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--accent-emerald)' }}>
+                    {featuredForHero[0].price}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                    {featuredForHero[0].title}
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    <MapPin size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> {featuredForHero[0].locality}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="landing-mascot-wrap">
+              <PropertyScoutMascot size="lg" showBadge badgeLabel="Property Scout AI" pointTo="right" />
+            </div>
+
+            {featuredForHero[1] && (
+              <div className="landing-float-card landing-float-card--right">
+                <img src={featuredForHero[1].image} alt="" />
+                <div className="landing-float-card-body">
+                  <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--accent-emerald)' }}>
+                    {featuredForHero[1].price}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                    {featuredForHero[1].title}
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    <MapPin size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> {featuredForHero[1].locality}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 2. YOUR PERSONAL PROPERTY PARTNER — POWERED BY AI (SHOWCASE GRID) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* VERIFIED RENTAL RESIDENCES SHOWCASE */}
+      <div id="landing-listings" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         
         <div style={{
           display: 'flex',

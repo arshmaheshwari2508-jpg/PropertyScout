@@ -37,7 +37,12 @@ SAFETY_PATTERNS = re.compile(
 )
 
 OFF_TOPIC_PATTERNS = re.compile(
-    r'(recipe|cook|biryani|weather|capital of|president|prime minister|politics|cricket|football|movie|song|poem|joke|code|python|java|javascript|algorithm|stock market|bitcoin|crypto)',
+    r'(recipe|cook|biryani|weather|capital of|president|prime minister|politics|cricket|football|movie|song|poem|joke|code|python|java|javascript|algorithm|stock market|bitcoin|crypto|flight|airline|airport|book me a trip|travel booking)',
+    re.IGNORECASE
+)
+
+PURCHASE_PATTERNS = re.compile(
+    r'(\bbuy\b|\bbuying\b|\bbuyer\s+mode\b|\bpurchase\b|\bfor\s+sale\b|\bsale\s+price\b|\bhome\s+purchase\b|\bown\s+a\s+(?:home|house|flat|property)\b)',
     re.IGNORECASE
 )
 
@@ -52,6 +57,10 @@ class IntentQueryRouter:
 
         # Check explicit off-topic patterns first
         if OFF_TOPIC_PATTERNS.search(query_clean):
+            return QueryIntent.OUT_OF_SCOPE
+
+        # Purchase / sale intent is out of scope — platform is rental-only
+        if IntentQueryRouter.is_purchase_intent(query_clean):
             return QueryIntent.OUT_OF_SCOPE
 
         # Check Safety intent
@@ -75,6 +84,27 @@ class IntentQueryRouter:
 
         # If query has no relation to real estate or Bengaluru, classify as OUT_OF_SCOPE
         return QueryIntent.OUT_OF_SCOPE
+
+    @staticmethod
+    def is_purchase_intent(query: str) -> bool:
+        """Returns True when the user is asking to buy / purchase property (rental-only platform)."""
+        if not query:
+            return False
+        return bool(PURCHASE_PATTERNS.search(query.strip()))
+
+    @staticmethod
+    def is_rental_intent(query: str) -> bool:
+        """Returns True when the user explicitly wants to rent (not buy)."""
+        if not query:
+            return False
+        text = query.strip().lower()
+        if IntentQueryRouter.is_purchase_intent(text):
+            return False
+        return bool(re.search(
+            r'\b(rent|rental|renting|lease|leasing|for rent|to rent|looking to rent|want to rent|need to rent)\b',
+            text,
+            re.IGNORECASE
+        ))
 
     @staticmethod
     def extract_locality_mention(query: str) -> Optional[str]:
@@ -113,6 +143,40 @@ class IntentQueryRouter:
         k_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:k|thousand)\b', query_clean)
         if k_match:
             return float(k_match.group(1)) * 1000.0
+
+        # Plain INR amounts (e.g. under 40000, under 1000, 50000 rupees)
+        under_match = re.search(
+            r'(?:under|below|upto|up to|max|maximum|within|less than)\s*(?:₹|rs\.?|rupees?)?\s*(\d+(?:,\d+)*(?:\.\d+)?)',
+            query_clean
+        )
+        if under_match:
+            return float(under_match.group(1).replace(',', ''))
+
+        rupee_match = re.search(r'(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:rupees?|rs\.?|inr)\b', query_clean)
+        if rupee_match:
+            return float(rupee_match.group(1).replace(',', ''))
+
+        return None
+
+    @staticmethod
+    def extract_bhk_from_query(query: str) -> Optional[int]:
+        """Extracts bedroom / BHK count (1-4) from a query string."""
+        if not query:
+            return None
+        q = query.lower().replace("-", " ")
+
+        bhk_explicit = re.search(r'\b([1-4])\s*bhk\b', q)
+        if bhk_explicit:
+            return int(bhk_explicit.group(1))
+
+        bedroom_match = re.search(r'\b([1-4])\s*(?:bedroom|bedrooms)\b', q)
+        if bedroom_match:
+            return int(bedroom_match.group(1))
+
+        word_map = {"one": 1, "two": 2, "three": 3, "four": 4}
+        for word, num in word_map.items():
+            if re.search(rf'\b{word}\s*(?:bhk|bedroom|bedrooms)?\b', q):
+                return num
 
         return None
 

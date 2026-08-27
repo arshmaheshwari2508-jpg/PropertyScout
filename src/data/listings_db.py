@@ -95,3 +95,17 @@ class PropertyListingsDB:
 
         return results
 
+    def get_known_localities(self) -> List[str]:
+        """Returns sorted unique locality names present in active listings."""
+        localities = {item.get("locality", "").strip() for item in self._listings if item.get("locality")}
+        return sorted(localities)
+
+    def is_known_locality(self, locality: Optional[str]) -> bool:
+        if not locality:
+            return True
+        loc_query = locality.lower()
+        return any(
+            loc_query in known.lower() or known.lower() in loc_query
+            for known in self.get_known_localities()
+        )
+

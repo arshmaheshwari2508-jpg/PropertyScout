@@ -2,7 +2,6 @@
 Multi-Persona Dialogue Manager for Voice-First AI Property Scout.
 Manages AI dialogue states, persona workspace switching, voice site visit booking,
 proactive site visit offer prompts, and seller intake forms across:
-  - Buyer Mode
   - Renter Mode
   - Seller / Landlord / Broker Mode (with 0.3 weighted RAG review ingestion)
 """
@@ -13,13 +12,13 @@ from enum import Enum
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from src.grounding.rag_policy_engine import RAGPolicyEngine
+from src.grounding.query_router import IntentQueryRouter, QueryIntent
 from src.agent.delta_engine import ShortlistDeltaEngine
 from src.data.listings_db import PropertyListingsDB
 from src.data.broker_booking_db import BrokerBookingDB, STANDARD_TIME_SLOTS
 
 
 class PersonaRole(str, Enum):
-    BUYER = "Buyer"
     RENTER = "Renter"
     SELLER_BROKER = "Seller/Broker"
 
@@ -48,19 +47,19 @@ class MultiPersonaDialogueManager:
     def switch_persona(self, new_persona: str) -> Dict[str, Any]:
         """Switches the active persona workspace mode with role-specific voice greeting."""
         persona_str = new_persona.strip()
-        if "buyer" in persona_str.lower():
-            self.current_persona = PersonaRole.BUYER
-            greeting = "Switched to Buyer Mode! Are you looking to purchase an apartment or villa in Bengaluru? What is your target purchase budget and preferred locality?"
+        if IntentQueryRouter.is_purchase_intent(persona_str) or "buyer mode" in persona_str.lower():
+            self.current_persona = PersonaRole.RENTER
+            greeting = "We can't help you with home purchase queries. Our platform specializes exclusively in verified rental property discovery in Bengaluru."
         elif "seller" in persona_str.lower() or "broker" in persona_str.lower() or "landlord" in persona_str.lower():
             self.current_persona = PersonaRole.SELLER_BROKER
-            greeting = "Switched to Seller & Broker Intake Mode! You can list your property here. What is the property name, locality, price, and any special highlights you'd like to share?"
+            greeting = "Switched to Landlord & Seller Intake Mode! You can list your rental property here. What is the property name, locality, monthly rent, and any special highlights you'd like to share?"
         else:
             self.current_persona = PersonaRole.RENTER
             greeting = "Switched to Renter Mode! I can help you find your ideal rental home. Which neighborhood in Bengaluru do you prefer, and what is your monthly budget?"
 
-        # Re-filter shortlist for the new persona
+        # Re-filter shortlist strictly for rental listings
         self.active_shortlist = self.listings_db.filter_listings(
-            listing_type="sale" if self.current_persona == PersonaRole.BUYER else "rent"
+            listing_type="rent"
         )
 
         return {
@@ -85,9 +84,9 @@ class MultiPersonaDialogueManager:
             "society_name": property_title,
             "locality": locality,
             "city": "Bengaluru",
-            "listing_type": "sale" if self.current_persona == PersonaRole.BUYER else "rent",
-            "rent_inr": price_inr if self.current_persona == PersonaRole.RENTER else None,
-            "sale_price_inr": price_inr if self.current_persona == PersonaRole.BUYER else None,
+            "listing_type": "rent",
+            "rent_inr": price_inr,
+            "sale_price_inr": None,
             "bedrooms": bedrooms,
             "bathrooms": bedrooms,
             "sqft": sqft,
@@ -131,7 +130,7 @@ class MultiPersonaDialogueManager:
 
         prop_title = target_property.get("society_name", "Bengaluru Property")
         locality = target_property.get("locality", "Bengaluru")
-        price = f"₹{target_property.get('rent_inr' if self.current_persona == PersonaRole.RENTER else 'sale_price_inr'):,}" if target_property.get("rent_inr") or target_property.get("sale_price_inr") else "N/A"
+        price = f"₹{target_property.get('rent_inr'):,}" if target_property.get("rent_inr") else "N/A"
 
         # Determine time slot
         slot = STANDARD_TIME_SLOTS[0]
@@ -193,23 +192,23 @@ class MultiPersonaDialogueManager:
         self.conversation_history.append({"role": "user", "text": user_transcript})
         text = user_transcript.lower()
 
+        # Purchase intent always declines — never proceed with a scripted rental interview
+        if IntentQueryRouter.is_purchase_intent(user_transcript):
+            msg = (
+                "We can't help you with home purchase queries. Our platform specializes "
+                "exclusively in verified rental property discovery in Bengaluru. "
+                "If you'd like to rent instead, tell me your preferred neighborhood and budget."
+            )
+            self.conversation_history.append({"role": "assistant", "text": msg})
+            return {
+                "active_persona": self.current_persona.value,
+                "intent": QueryIntent.OUT_OF_SCOPE.value,
+                "final_answer": msg,
+                "shortlist": self.active_shortlist,
+            }
+
         # Update active locality state if mentioned in user transcript
-        extracted_loc = None
-        locality_map = {
-            "koramangala": "Koramangala",
-            "kormangala": "Koramangala",
-            "kormangla": "Koramangala",
-            "kora": "Koramangala",
-            "indiranagar": "Indiranagar",
-            "hsr": "HSR Layout",
-            "whitefield": "Whitefield",
-            "bellandur": "Bellandur",
-            "mahadevapura": "Mahadevapura"
-        }
-        for kw, loc_name in locality_map.items():
-            if kw in text:
-                extracted_loc = loc_name
-                break
+        extracted_loc = self._extract_locality_from_transcript(user_transcript)
 
         if extracted_loc:
             self.active_locality = extracted_loc
@@ -217,24 +216,15 @@ class MultiPersonaDialogueManager:
             self.active_locality = active_locality
 
         # Extract max budget if present in user speech
-        from src.grounding.query_router import IntentQueryRouter
         max_budget = IntentQueryRouter.extract_max_budget_inr(user_transcript)
 
         # Extract BHK if present in user speech
-        exact_bhk = None
-        if "1bhk" in text or "1 bhk" in text or "1 bedroom" in text:
-            exact_bhk = 1
-        elif "2bhk" in text or "2 bhk" in text or "2 bedroom" in text:
-            exact_bhk = 2
-        elif "3bhk" in text or "3 bhk" in text or "3 bedroom" in text:
-            exact_bhk = 3
-        elif "4bhk" in text or "4 bhk" in text or "4 bedroom" in text:
-            exact_bhk = 4
+        exact_bhk = IntentQueryRouter.extract_bhk_from_query(user_transcript)
 
         # Update dynamic active shortlist based on locality, listing type (sale vs rent), max budget, and exact BHK
         filtered = self.listings_db.filter_listings(
             locality=self.active_locality,
-            listing_type="sale" if self.current_persona == PersonaRole.BUYER else "rent",
+            listing_type="rent",
             max_price=max_budget,
             exact_bedrooms=exact_bhk
         )
@@ -297,3 +287,48 @@ class MultiPersonaDialogueManager:
         rag_res["shortlist"] = self.active_shortlist
         
         return rag_res
+
+    def _extract_locality_from_transcript(self, transcript: str) -> Optional[str]:
+        """Extract locality, preferring explicit pivots like 'instead' / 'show me X'."""
+        text = transcript.lower()
+        locality_map = {
+            "koramangala": "Koramangala",
+            "kormangala": "Koramangala",
+            "kormangla": "Koramangala",
+            "koramngala": "Koramangala",
+            "kora": "Koramangala",
+            "indiranagar": "Indiranagar",
+            "domlur": "Domlur",
+            "hsr": "HSR Layout",
+            "whitefield": "Whitefield",
+            "bellandur": "Bellandur",
+            "mahadevapura": "Mahadevapura",
+            "pete area": "Pete Area",
+            "sadashivanagar": "Sadashivanagar",
+            "malleswaram": "Malleswaram",
+            "rajajinagar": "Rajajinagar",
+        }
+
+        matches: List[str] = []
+        for kw, loc_name in locality_map.items():
+            if kw in text:
+                matches.append(loc_name)
+
+        if not matches:
+            return None
+
+        # Prefer locality after pivot phrases
+        pivot_markers = ("instead", "switch to", "show me", "forget", "rather than", "change to", "make that")
+        best_idx = -1
+        best_loc = matches[-1]
+        for marker in pivot_markers:
+            idx = text.rfind(marker)
+            if idx >= best_idx:
+                segment = text[idx:]
+                for kw, loc_name in locality_map.items():
+                    if kw in segment:
+                        best_loc = loc_name
+                        best_idx = idx
+                        break
+
+        return best_loc

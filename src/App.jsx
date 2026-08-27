@@ -14,6 +14,25 @@ import BookingModal from './components/BookingModal';
 import MortgageCalculatorModal from './components/MortgageCalculatorModal';
 import SpotlightPropertyPanel from './components/SpotlightPropertyPanel';
 import InfoModals from './components/InfoModals';
+import {
+  SITE_VISIT_TIME_SLOTS,
+  fetchBrokerSlotAvailability,
+  submitSiteVisitRequest
+} from './utils/siteVisitBooking';
+import { createVoiceActivityDetector } from './utils/voiceActivityDetection';
+import {
+  normalizeInterruptTranscript,
+  shouldProcessBargeInTranscript,
+  shouldTriggerBargeIn
+} from './utils/voiceInterrupt';
+import {
+  isPurchaseIntent,
+  isRentalIntent,
+  hasRentalSearchCriteria,
+  getMissingRentalPrompt,
+  PURCHASE_DECLINE_MSG
+} from './utils/intentDetection';
+import { apiUrl } from './utils/apiBase';
 
 // Word-to-number dictionary for English/Hindi spoken numbers
 const wordToNumberMap = {
@@ -130,9 +149,210 @@ const extractLocalityFromText = (text) => {
   return locs.length > 0 ? locs[0] : null;
 };
 
+const METRO_MAP = {
+  'Indiranagar': { station: 'Indiranagar Metro Station', distance: 'under 1 km', line: 'Purple Line' },
+  'Koramangala': { station: 'Trinity Metro Station', distance: 'around 4.4 km', line: 'Purple Line' },
+  'HSR Layout': { station: 'Silk Board Metro Station', distance: 'under 1.5 km', line: 'Yellow Line' },
+  'Whitefield': { station: 'Whitefield (Kadugodi) Metro Station', distance: 'under 1 km', line: 'Purple Line' },
+  'Mahadevapura': { station: 'Singayyanapalya Metro Station', distance: 'under 1 km', line: 'Purple Line' },
+  'Jayanagar': { station: 'Jayanagar Metro Station', distance: 'under 1 km', line: 'Green Line' },
+  'Sarjapura': { station: 'Bellandur Road Metro Station', distance: 'around 3.5 km', line: 'Blue Line' },
+  'Domlur': { station: 'Indiranagar Metro Station', distance: 'under 2 km', line: 'Purple Line' }
+};
+
+const getMetroInfoForLocality = (locName) => {
+  if (!locName) return { station: 'Indiranagar Metro Station', distance: 'under 1 km', line: 'Purple Line' };
+  for (const [key, info] of Object.entries(METRO_MAP)) {
+    if (locName.toLowerCase().includes(key.toLowerCase())) return info;
+  }
+  return { station: `${locName} Metro Station`, distance: 'under 1.5 km', line: 'Namma Metro Network' };
+};
+
+const extractBhksFromText = (text) => {
+  if (!text) return [];
+  const q = text.toLowerCase();
+  const bhks = new Set();
+
+  // 1. Direct regex for multi-BHK phrases like "2 or 3", "2 and 3 bhk", "2, 3 bhk", "2/3 bhk"
+  const comboMatches = q.matchAll(/\b([1-4])\s*(?:and|or|to|,|\/)\s*([1-4])\s*(?:bhk|bedroom|bedrooms)?\b/g);
+  for (const match of comboMatches) {
+    bhks.add(parseInt(match[1]));
+    bhks.add(parseInt(match[2]));
+  }
+
+  // 2. Individual BHK pattern checks
+  if (q.match(/\b1\s*(?:bhk|bedroom|bedrooms)?\b/) || q.includes('1bhk') || q.includes('1-bhk') || q.includes('one bhk')) {
+    bhks.add(1);
+  }
+  if (q.match(/\b2\s*(?:bhk|bedroom|bedrooms)?\b/) || q.includes('2bhk') || q.includes('2-bhk') || q.includes('two bhk')) {
+    bhks.add(2);
+  }
+  if (q.match(/\b3\s*(?:bhk|bedroom|bedrooms)?\b/) || q.includes('3bhk') || q.includes('3-bhk') || q.includes('three bhk')) {
+    bhks.add(3);
+  }
+  if (q.match(/\b4\s*(?:bhk|bedroom|bedrooms)?\b/) || q.includes('4bhk') || q.includes('4-bhk') || q.includes('four bhk')) {
+    bhks.add(4);
+  }
+  if (q.match(/\bone\s*(?:bhk|bedroom|bedrooms)\b/) || q.includes('one bhk')) {
+    bhks.add(1);
+  }
+  if (q.match(/\btwo\s*(?:bhk|bedroom|bedrooms)\b/) || q.includes('two bhk')) {
+    bhks.add(2);
+  }
+  if (q.match(/\bthree\s*(?:bhk|bedroom|bedrooms)\b/) || q.includes('three bhk')) {
+    bhks.add(3);
+  }
+  if (q.match(/\bfour\s*(?:bhk|bedroom|bedrooms)\b/) || q.includes('four bhk')) {
+    bhks.add(4);
+  }
+  if (q.includes('ek bhk') || q.match(/\bek\s*(?:bhk|bedroom|bedrooms)\b/)) {
+    bhks.add(1);
+  }
+  if (q.includes('do bhk') || q.match(/\bdo\s*(?:bhk|bedroom|bedrooms)\b/)) {
+    bhks.add(2);
+  }
+  if (q.includes('teen bhk') || q.match(/\bteen\s*(?:bhk|bedroom|bedrooms)\b/)) {
+    bhks.add(3);
+  }
+  if (q.includes('char bhk') || q.match(/\bchar\s*(?:bhk|bedroom|bedrooms)\b/)) {
+    bhks.add(4);
+  }
+
+  // Standalone digit answers common in voice (e.g. user says only "2")
+  const trimmed = q.trim();
+  if (bhks.size === 0 && trimmed.match(/^([1-4])$/)) {
+    bhks.add(parseInt(trimmed, 10));
+  }
+
+  return Array.from(bhks);
+};
+
+// Flatten legacy nested listing arrays and drop invalid entries
+const normalizeListings = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const flat = list.some((item) => Array.isArray(item)) ? list.flat() : list;
+  return flat.filter((item) => item && item.listing_id);
+};
+
+const PROPERTY_BROWSE_VOICE_PROMPT = 'Have a look at the properties and let me know if you like any. I will book a site visit for you.';
+
+const formatPropertyNamesForVoice = (properties, limit = 3) => {
+  if (!properties?.length) return '';
+  return properties.slice(0, limit).map((p) => p.society_name).filter(Boolean).join(', ');
+};
+
+const findShortlistPropertyFromQuery = (query, list) => {
+  if (!query || !list?.length) return null;
+  const q = query.toLowerCase();
+  const candidates = list.filter((p) => p?.society_name);
+
+  const exact = candidates.find((p) => q.includes(p.society_name.toLowerCase()));
+  if (exact) return exact;
+
+  let best = null;
+  let bestScore = 0;
+  for (const p of candidates) {
+    const tokens = p.society_name.toLowerCase().split(/[\s,&\-()]+/).filter((t) => t.length > 3);
+    let score = 0;
+    for (const t of tokens) {
+      if (q.includes(t)) score += t.length;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = p;
+    }
+  }
+  return bestScore >= 4 ? best : null;
+};
+
+const formatVisitDateForSpeech = (dateStr) => {
+  if (!dateStr) return dateStr;
+  const d = new Date(`${dateStr}T12:00:00`);
+  return d.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' });
+};
+
+const parseVisitDateFromText = (text) => {
+  if (!text) return null;
+  const q = text.toLowerCase().trim();
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  if (q.includes('tomorrow')) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }
+  if (q.includes('today')) {
+    return today.toISOString().split('T')[0];
+  }
+
+  const iso = q.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const months = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 12
+  };
+  for (const [name, idx] of Object.entries(months)) {
+    const monthDay = q.match(new RegExp(`${name}\\s+(\\d{1,2})`));
+    if (monthDay) {
+      const d = new Date(today.getFullYear(), idx, parseInt(monthDay[1], 10));
+      if (d < today) d.setFullYear(d.getFullYear() + 1);
+      return d.toISOString().split('T')[0];
+    }
+    const dayMonth = q.match(new RegExp(`(\\d{1,2})(?:st|nd|rd|th)?\\s+${name}`));
+    if (dayMonth) {
+      const d = new Date(today.getFullYear(), idx, parseInt(dayMonth[1], 10));
+      if (d < today) d.setFullYear(d.getFullYear() + 1);
+      return d.toISOString().split('T')[0];
+    }
+  }
+
+  const slash = q.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (slash) {
+    const year = slash[3] ? (slash[3].length === 2 ? `20${slash[3]}` : slash[3]) : String(today.getFullYear());
+    const d = new Date(parseInt(year, 10), parseInt(slash[2], 10) - 1, parseInt(slash[1], 10));
+    return d.toISOString().split('T')[0];
+  }
+
+  return null;
+};
+
+const parseTimeSlotFromText = (text) => {
+  if (!text) return null;
+  const q = text.toLowerCase();
+  if (q.includes('11:30') || q.includes('11 30') || (q.includes('11') && q.includes('30'))) {
+    return '11:30 AM - 12:30 PM';
+  }
+  if (q.includes('2 pm') || q.includes('2pm') || q.includes('14:00') || q.includes('14 ') || q.includes('afternoon')) {
+    return '02:00 PM - 03:00 PM';
+  }
+  if (q.includes('4 pm') || q.includes('4pm') || q.includes('16:') || q.includes('evening')) {
+    return '04:00 PM - 05:00 PM';
+  }
+  if (q.match(/\b10\b/) || q.includes('10 am') || q.includes('ten am') || q.includes('morning')) {
+    return '10:00 AM - 11:00 AM';
+  }
+  for (const slot of SITE_VISIT_TIME_SLOTS) {
+    if (q.includes(slot.toLowerCase().slice(0, 5))) return slot;
+  }
+  return null;
+};
+
+const extractEmailFromText = (text) => {
+  if (!text) return null;
+  const m = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  return m ? m[0] : null;
+};
+
+const extractPhoneFromText = (text) => {
+  if (!text) return null;
+  const m = text.match(/(\+?\d[\d\s\-]{8,14}\d)/);
+  return m ? m[0].replace(/\s+/g, ' ').trim() : null;
+};
+
 // Seed active property listings with real high-resolution photos matching listings.json
 const initialListings = [
-[
   {
     "listing_id": "rent_bengaluru_1_1",
     "society_name": "TVS Emerald Court Cantonment Area",
@@ -3093,7 +3313,6 @@ const initialListings = [
     "contact_type": "Platform Agent",
     "contact_ref": "REF-rent_bengaluru_74_2"
   }
-]
 ];
 
 export default function App() {
@@ -3136,7 +3355,7 @@ export default function App() {
   useEffect(() => {
     const autoSyncBackendListings = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/listings');
+        const res = await fetch(apiUrl('/api/listings'));
         const data = await res.json();
         if (data.listings && data.listings.length > 0) {
           setShortlist(prev => data.listings.length >= prev.length ? data.listings : prev);
@@ -3157,10 +3376,12 @@ export default function App() {
   // Explicit Buyer State Machine
   const [buyerStep, setBuyerStep] = useState(0);
   const [buyerData, setBuyerData] = useState({
-    listingType: 'sale',
-    locality: 'Indiranagar',
+    listingType: 'rent',
+    locality: '',
+    localities: [],
     maxBudget: null,
-    bedrooms: 2,
+    bedrooms: null,
+    isPenthouse: false,
     familyPreferences: ''
   });
 
@@ -3192,37 +3413,242 @@ export default function App() {
   const [sourcesDrawerOpen, setSourcesDrawerOpen] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState(null);
   const [bookingProperty, setBookingProperty] = useState(null);
+  const [voiceBookingStep, setVoiceBookingStep] = useState(null);
+  const [voiceBookingDraft, setVoiceBookingDraft] = useState({
+    visitDate: '',
+    timeSlot: '',
+    name: '',
+    email: '',
+    phone: ''
+  });
+
+  const voiceBookingStepRef = useRef(voiceBookingStep);
+  voiceBookingStepRef.current = voiceBookingStep;
+  const bookingPropertyRef = useRef(bookingProperty);
+  bookingPropertyRef.current = bookingProperty;
+  const voiceBookingDraftRef = useRef(voiceBookingDraft);
+  voiceBookingDraftRef.current = voiceBookingDraft;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'dark');
   }, []);
 
   const activeRecognitionRef = useRef(null);
+  const bargeInRecognitionRef = useRef(null);
+  const vadDetectorRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const bargeInPendingRef = useRef(false);
+  const bargeInListenFallbackRef = useRef(null);
+  const currentUtteranceRef = useRef(null);
+  const speechKeepAliveIntervalRef = useRef(null);
+  const sentenceWatchdogTimerRef = useRef(null);
   const isVoiceModeActiveRef = useRef(false);
   const isPlayingAudioRef = useRef(false);
+  const listenTimeoutRef = useRef(null);
+  const speechCancelledRef = useRef(false);
+  const speechStartTimeoutRef = useRef(null);
+
+  const stopBargeInMonitoring = () => {
+    if (bargeInListenFallbackRef.current) {
+      clearTimeout(bargeInListenFallbackRef.current);
+      bargeInListenFallbackRef.current = null;
+    }
+    bargeInPendingRef.current = false;
+
+    if (vadDetectorRef.current) {
+      vadDetectorRef.current.stop();
+      vadDetectorRef.current = null;
+    }
+    if (bargeInRecognitionRef.current) {
+      try { bargeInRecognitionRef.current.abort(); } catch (e) {}
+      bargeInRecognitionRef.current = null;
+    }
+  };
+
+  const cancelAgentPlayback = () => {
+    speechCancelledRef.current = true;
+    isPlayingAudioRef.current = false;
+    setIsPlayingAudio(false);
+
+    if (speechKeepAliveIntervalRef.current) {
+      clearInterval(speechKeepAliveIntervalRef.current);
+      speechKeepAliveIntervalRef.current = null;
+    }
+    if (sentenceWatchdogTimerRef.current) {
+      clearTimeout(sentenceWatchdogTimerRef.current);
+      sentenceWatchdogTimerRef.current = null;
+    }
+    if (speechStartTimeoutRef.current) {
+      clearTimeout(speechStartTimeoutRef.current);
+      speechStartTimeoutRef.current = null;
+    }
+    currentUtteranceRef.current = null;
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
+  const finishBargeIn = (transcript = '') => {
+    stopBargeInMonitoring();
+    cancelAgentPlayback();
+
+    isVoiceModeActiveRef.current = true;
+    const trimmed = normalizeInterruptTranscript(transcript);
+
+    if (shouldProcessBargeInTranscript(trimmed)) {
+      handleProcessQuery(trimmed, true);
+      return;
+    }
+
+    if (trimmed) {
+      setTranscriptHistory(prev => [...prev, { role: 'user', text: trimmed }]);
+    }
+    startListeningInternal();
+  };
+
+  const handleVadSpeechStart = () => {
+    if (!isPlayingAudioRef.current) return;
+
+    cancelAgentPlayback();
+    bargeInPendingRef.current = true;
+
+    if (bargeInListenFallbackRef.current) {
+      clearTimeout(bargeInListenFallbackRef.current);
+    }
+    bargeInListenFallbackRef.current = setTimeout(() => {
+      if (bargeInPendingRef.current) {
+        finishBargeIn('');
+      }
+    }, 700);
+  };
+
+  const startBargeInMonitoring = async () => {
+    stopBargeInMonitoring();
+
+    if (!micStreamRef.current && navigator.mediaDevices?.getUserMedia) {
+      try {
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (err) {
+        console.warn('Mic access for VAD failed:', err);
+      }
+    }
+
+    try {
+      const detector = await createVoiceActivityDetector({
+        existingStream: micStreamRef.current || undefined,
+        onSpeechStart: handleVadSpeechStart,
+      });
+      vadDetectorRef.current = detector;
+      const stream = await detector.start();
+      if (!micStreamRef.current) {
+        micStreamRef.current = stream;
+      }
+    } catch (err) {
+      console.warn('VAD start failed:', err);
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    try {
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-IN';
+
+      rec.onresult = (event) => {
+        if (!isPlayingAudioRef.current && !bargeInPendingRef.current) return;
+
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const chunk = event.results[i][0]?.transcript;
+          if (chunk) transcript = chunk;
+        }
+
+        if (!shouldTriggerBargeIn(transcript)) return;
+
+        if (isPlayingAudioRef.current) {
+          cancelAgentPlayback();
+        }
+        bargeInPendingRef.current = false;
+        finishBargeIn(transcript);
+      };
+
+      rec.onerror = (e) => {
+        if (e.error !== 'aborted') {
+          console.warn('Barge-in recognition error:', e.error);
+        }
+      };
+
+      bargeInRecognitionRef.current = rec;
+      rec.start();
+    } catch (err) {
+      console.warn('Barge-in recognition start failed:', err);
+    }
+  };
 
   const stopVoice = () => {
+    speechCancelledRef.current = true;
     isVoiceModeActiveRef.current = false;
     isPlayingAudioRef.current = false;
+
+    stopBargeInMonitoring();
+
+    if (listenTimeoutRef.current) {
+      clearTimeout(listenTimeoutRef.current);
+      listenTimeoutRef.current = null;
+    }
+    if (speechStartTimeoutRef.current) {
+      clearTimeout(speechStartTimeoutRef.current);
+      speechStartTimeoutRef.current = null;
+    }
+    if (speechKeepAliveIntervalRef.current) {
+      clearInterval(speechKeepAliveIntervalRef.current);
+      speechKeepAliveIntervalRef.current = null;
+    }
+    if (sentenceWatchdogTimerRef.current) {
+      clearTimeout(sentenceWatchdogTimerRef.current);
+      sentenceWatchdogTimerRef.current = null;
+    }
+    currentUtteranceRef.current = null;
+
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     if (activeRecognitionRef.current) {
       try { activeRecognitionRef.current.abort(); } catch (e) {}
+      activeRecognitionRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
     }
     setIsListening(false);
     setIsPlayingAudio(false);
   };
 
-  const startListening = async (speakGreetingIfFirst = false) => {
+  const startListening = async (speakGreetingIfFirst = false, resumeForSiteVisit = false, voiceBookingOnly = false) => {
     stopVoice();
 
-    // 1. Explicitly request Microphone Permission FIRST before greeting or recognition!
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Stop temporary stream tracks immediately after permission check
-        stream.getTracks().forEach(track => track.stop());
+        if (micStreamRef.current) {
+          micStreamRef.current.getTracks().forEach((track) => track.stop());
+        }
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
       } catch (err) {
         console.warn("Microphone access denied or blocked:", err);
         alert("Microphone permission is required to use Voice AI. Please allow microphone access in your browser address bar.");
@@ -3231,19 +3657,26 @@ export default function App() {
       }
     }
 
-    // 2. Microphone Permission GRANTED -> Speak welcome greeting if first interaction, otherwise start listening!
-    if (speakGreetingIfFirst && transcriptHistory.length <= 1) {
-      const greeting = "Welcome to Property Scout! How should I help you today?";
-      setTranscriptHistory(prev => {
-        if (prev.length === 0 || (prev.length === 1 && prev[0].role === 'assistant')) {
-          return [{ role: 'assistant', text: greeting }];
-        }
-        return [...prev, { role: 'assistant', text: greeting }];
-      });
-      speakText(greeting, true);
-    } else {
+    if (voiceBookingOnly) {
       startListeningInternal();
+      return;
     }
+
+    if (speakGreetingIfFirst && transcriptHistory.length === 0) {
+      const greeting = "Welcome to Property Scout! How should I help you today?";
+      setTranscriptHistory([{ role: 'assistant', text: greeting }]);
+      speakText(greeting, true);
+      return;
+    }
+
+    if (resumeForSiteVisit) {
+      const resumeMsg = "Which property would you like to visit? Tell me the name, or say book a site visit.";
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: resumeMsg }]);
+      speakText(resumeMsg, true);
+      return;
+    }
+
+    startListeningInternal();
   };
 
   const startListeningInternal = () => {
@@ -3268,7 +3701,8 @@ export default function App() {
       rec.onend = () => {
         setIsListening(false);
         if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current) {
-          setTimeout(() => {
+          if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
+          listenTimeoutRef.current = setTimeout(() => {
             if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current) {
               startListeningInternal();
             }
@@ -3278,6 +3712,14 @@ export default function App() {
       rec.onresult = (event) => {
         const speechText = event.results[0][0]?.transcript;
         if (speechText && speechText.trim()) {
+          isVoiceModeActiveRef.current = false;
+          if (listenTimeoutRef.current) {
+            clearTimeout(listenTimeoutRef.current);
+            listenTimeoutRef.current = null;
+          }
+          if (activeRecognitionRef.current) {
+            try { activeRecognitionRef.current.abort(); } catch (e) {}
+          }
           handleProcessQuery(speechText.trim(), true);
         }
       };
@@ -3285,8 +3727,10 @@ export default function App() {
       rec.onerror = (e) => {
         console.warn("Speech recognition error:", e.error);
         setIsListening(false);
-        if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current && (e.error === 'no-speech' || e.error === 'aborted')) {
-          setTimeout(() => {
+        if (e.error === 'aborted') return;
+        if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current && e.error === 'no-speech') {
+          if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
+          listenTimeoutRef.current = setTimeout(() => {
             if (isVoiceModeActiveRef.current && !isPlayingAudioRef.current) {
               startListeningInternal();
             }
@@ -3302,15 +3746,16 @@ export default function App() {
     }
   };
 
-  const currentUtteranceRef = useRef(null);
-  const speechKeepAliveIntervalRef = useRef(null);
-  const sentenceWatchdogTimerRef = useRef(null);
-
   const speakText = (text, autoListenAfter = false) => {
     if (!('speechSynthesis' in window) || !text) return;
 
     try {
+      speechCancelledRef.current = false;
       window.speechSynthesis.cancel();
+      if (listenTimeoutRef.current) {
+        clearTimeout(listenTimeoutRef.current);
+        listenTimeoutRef.current = null;
+      }
       if (speechKeepAliveIntervalRef.current) {
         clearInterval(speechKeepAliveIntervalRef.current);
       }
@@ -3323,7 +3768,8 @@ export default function App() {
         setIsListening(false);
       }
 
-      const cleanText = text.trim();
+      // Sanitize special currency symbols (₹ -> Rupees) and number commas so Web Speech API never errors or truncates on price strings
+      const cleanText = text.trim().replace(/₹/g, 'Rupees ').replace(/(\d+),(\d+)/g, '$1$2');
       const rawSentences = cleanText.split(/(?<=[.!?])\s+/);
       const sentences = rawSentences.map(s => s.trim()).filter(Boolean);
       if (sentences.length === 0) sentences.push(cleanText);
@@ -3334,8 +3780,16 @@ export default function App() {
       if (autoListenAfter) {
         isVoiceModeActiveRef.current = true;
       }
+      startBargeInMonitoring();
 
       const speakNextSentence = () => {
+        if (speechCancelledRef.current) {
+          setIsPlayingAudio(false);
+          isPlayingAudioRef.current = false;
+          stopBargeInMonitoring();
+          return;
+        }
+
         if (sentenceWatchdogTimerRef.current) {
           clearTimeout(sentenceWatchdogTimerRef.current);
         }
@@ -3343,13 +3797,17 @@ export default function App() {
         if (currentIndex >= sentences.length) {
           setIsPlayingAudio(false);
           isPlayingAudioRef.current = false;
+          stopBargeInMonitoring();
           if (speechKeepAliveIntervalRef.current) {
             clearInterval(speechKeepAliveIntervalRef.current);
+            speechKeepAliveIntervalRef.current = null;
           }
           currentUtteranceRef.current = null;
-          if (autoListenAfter) {
+          if (autoListenAfter && !speechCancelledRef.current) {
             setTimeout(() => {
-              startListeningInternal();
+              if (!speechCancelledRef.current) {
+                startListeningInternal();
+              }
             }, 500);
           }
           return;
@@ -3375,6 +3833,7 @@ export default function App() {
 
         let sentenceDone = false;
         const advanceToNext = () => {
+          if (speechCancelledRef.current) return;
           if (sentenceDone) return;
           sentenceDone = true;
           if (sentenceWatchdogTimerRef.current) {
@@ -3404,14 +3863,17 @@ export default function App() {
       };
 
       speechKeepAliveIntervalRef.current = setInterval(() => {
-        if (window.speechSynthesis) {
-          if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-          }
+        if (speechCancelledRef.current) return;
+        if (window.speechSynthesis?.paused) {
+          window.speechSynthesis.resume();
         }
       }, 1000);
 
-      setTimeout(() => {
+      if (speechStartTimeoutRef.current) {
+        clearTimeout(speechStartTimeoutRef.current);
+      }
+      speechStartTimeoutRef.current = setTimeout(() => {
+        if (speechCancelledRef.current) return;
         if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume();
         }
@@ -3433,9 +3895,8 @@ export default function App() {
     const targetRole = role === 'Buyer' ? 'Renter' : role;
     setActivePersona(targetRole);
     setActiveView('command');
-
     setBuyerFilterType('rent');
-    startListening(true);
+    // Voice starts only when user clicks Speak — never auto-start here
   };
 
   const handlePersonaChange = (newPersona) => {
@@ -3473,8 +3934,174 @@ export default function App() {
     speakText(successMessage);
   };
 
+  const cancelVoiceSiteVisitBooking = (triggerAudio = true) => {
+    setVoiceBookingStep(null);
+    setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
+    setBookingProperty(null);
+    const msg = 'Site visit booking cancelled. Let me know if you want to pick another property.';
+    setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
+    if (triggerAudio) speakText(msg, true);
+  };
+
+  const startVoiceSiteVisitBooking = (property, triggerAudio = true) => {
+    if (!property) return;
+    setBookingProperty(property);
+    setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
+    setVoiceBookingStep('date');
+    const msg = `Great choice! Let's schedule a site visit for ${property.society_name}. What date would you like to visit? You can say tomorrow or a specific date.`;
+    setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
+    if (triggerAudio) speakText(msg, true);
+  };
+
+  const formatAvailableSlotsForSpeech = (statusMap) => {
+    const free = SITE_VISIT_TIME_SLOTS.filter((slot) => statusMap[slot]?.is_available);
+    return free.length > 0 ? free.join(', ') : 'no broker slots available';
+  };
+
+  const handleVoiceBookingTurn = async (userQuery, triggerAudio = true) => {
+    const step = voiceBookingStepRef.current;
+    const property = bookingPropertyRef.current;
+    const draft = { ...voiceBookingDraftRef.current };
+    const q = userQuery.toLowerCase().trim();
+
+    if (!step || !property) {
+      setVoiceBookingStep(null);
+      return;
+    }
+
+    if (q.includes('cancel') || q.includes('stop booking') || q.includes('not now')) {
+      cancelVoiceSiteVisitBooking(triggerAudio);
+      return;
+    }
+
+    const speakAssistant = (msg) => {
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
+      if (triggerAudio) speakText(msg, true);
+    };
+
+    if (step === 'date') {
+      const visitDate = parseVisitDateFromText(userQuery);
+      if (!visitDate) {
+        speakAssistant('I did not catch the date. Please say tomorrow or a date like 15 August.');
+        return;
+      }
+      draft.visitDate = visitDate;
+      setVoiceBookingDraft(draft);
+
+      const statusMap = await fetchBrokerSlotAvailability(visitDate);
+      const freeSlots = formatAvailableSlotsForSpeech(statusMap);
+      setVoiceBookingStep('time');
+      speakAssistant(
+        `For ${formatVisitDateForSpeech(visitDate)}, available broker slots are: ${freeSlots}. Which time slot would you like?`
+      );
+      return;
+    }
+
+    if (step === 'time') {
+      const slot = parseTimeSlotFromText(userQuery);
+      if (!slot) {
+        const statusMap = await fetchBrokerSlotAvailability(draft.visitDate);
+        speakAssistant(
+          `Please pick a time slot. Available slots are: ${formatAvailableSlotsForSpeech(statusMap)}.`
+        );
+        return;
+      }
+
+      let slotAvailable = true;
+      try {
+        const res = await fetch(
+          apiUrl(`/api/brokers/availability?visit_date=${draft.visitDate}&time_slot=${encodeURIComponent(slot)}`)
+        );
+        const data = await res.json();
+        slotAvailable = data.is_available;
+      } catch {
+        slotAvailable = true;
+      }
+
+      if (!slotAvailable) {
+        const statusMap = await fetchBrokerSlotAvailability(draft.visitDate);
+        speakAssistant(
+          `Sorry, ${slot} is fully booked. Available slots are: ${formatAvailableSlotsForSpeech(statusMap)}.`
+        );
+        return;
+      }
+
+      draft.timeSlot = slot;
+      setVoiceBookingDraft(draft);
+      setVoiceBookingStep('name');
+      speakAssistant('What is your full name for the booking?');
+      return;
+    }
+
+    if (step === 'name') {
+      const name = userQuery.replace(/^(my name is|i am|this is)\s+/i, '').trim();
+      if (!name || name.length < 2) {
+        speakAssistant('Please tell me your full name for the site visit booking.');
+        return;
+      }
+      draft.name = name;
+      setVoiceBookingDraft(draft);
+      setVoiceBookingStep('phone');
+      speakAssistant('What is your phone number with country code?');
+      return;
+    }
+
+    if (step === 'phone') {
+      const phone = extractPhoneFromText(userQuery) || userQuery.replace(/[^\d+\-\s]/g, '').trim();
+      if (!phone || phone.replace(/\D/g, '').length < 10) {
+        speakAssistant('Please provide a valid phone number, for example plus 91 9876543210.');
+        return;
+      }
+      draft.phone = phone;
+      setVoiceBookingDraft(draft);
+      setVoiceBookingStep('email');
+      speakAssistant('What is your email address? We will send the confirmation email and calendar invite there.');
+      return;
+    }
+
+    if (step === 'email') {
+      const email = extractEmailFromText(userQuery) || (userQuery.includes('@') ? userQuery.trim() : null);
+      if (!email || !email.includes('@')) {
+        speakAssistant('Please provide a valid email address for your confirmation email.');
+        return;
+      }
+      draft.email = email;
+      setVoiceBookingDraft(draft);
+
+      try {
+        const data = await submitSiteVisitRequest(property, draft);
+
+        if (!data.success) {
+          const busyMsg = data.message || `All brokers are busy for ${draft.timeSlot}. Please choose another time slot.`;
+          setVoiceBookingStep('time');
+          const statusMap = await fetchBrokerSlotAvailability(draft.visitDate);
+          speakAssistant(
+            `${busyMsg} Available slots are: ${formatAvailableSlotsForSpeech(statusMap)}.`
+          );
+          return;
+        }
+
+        const brokerName = data.broker?.name || 'your assigned broker';
+        const confirmMsg = `Done! Your site visit for ${property.society_name} is confirmed on ${formatVisitDateForSpeech(draft.visitDate)} at ${draft.timeSlot}. Confirmation email sent to ${draft.email}. ${brokerName} will meet you at the property.`;
+        setVoiceBookingStep(null);
+        setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
+        speakAssistant(confirmMsg);
+      } catch (err) {
+        console.warn('Voice site visit submit failed:', err);
+        speakAssistant(
+          'I could not complete the booking right now. Please use the Schedule Visit button on the property card, or try again in a moment.'
+        );
+        setBookingProperty(property);
+      }
+    }
+  };
+
   const executeBuyerFilter = (data) => {
-    let allProperties = [...initialListings, ...sellerListings];
+    try {
+    const allProperties = [
+      ...normalizeListings(shortlist.length > 0 ? shortlist : initialListings),
+      ...normalizeListings(sellerListings)
+    ];
     let filtered = [...allProperties];
 
     // Determine target localities array
@@ -3514,30 +4141,47 @@ export default function App() {
         (item.bedrooms && item.bedrooms >= 4)
       );
     } else if (data.bedrooms !== null && data.bedrooms !== undefined) {
-      const targetBhk = Number(data.bedrooms);
-      if (!isNaN(targetBhk)) {
-        filtered = filtered.filter(item => item.bedrooms === targetBhk);
+      if (Array.isArray(data.bedrooms) && data.bedrooms.length > 0) {
+        const targetBhks = data.bedrooms.map(b => Number(b)).filter(b => !isNaN(b));
+        if (targetBhks.length > 0) {
+          filtered = filtered.filter(item => targetBhks.includes(item.bedrooms));
+        }
+      } else {
+        const targetBhk = Number(data.bedrooms);
+        if (!isNaN(targetBhk)) {
+          filtered = filtered.filter(item => item.bedrooms === targetBhk);
+        }
       }
     }
 
-    // 4. Zero Match Fallback — Retrieve & suggest nearby properties in adjacent localities!
+    // 4. Zero Match Fallback — Retrieve & suggest required size properties in nearby localities!
     if (filtered.length === 0) {
-      const nearbyAlternatives = allProperties.filter(item => item.listing_type === listingType).slice(0, 3);
+      let nearbyAlternatives = allProperties.filter(item => item.listing_type === listingType);
+      if (data.bedrooms) {
+        if (Array.isArray(data.bedrooms) && data.bedrooms.length > 0) {
+          const targetBhks = data.bedrooms.map(Number);
+          const bhkMatches = nearbyAlternatives.filter(item => targetBhks.includes(item.bedrooms));
+          if (bhkMatches.length > 0) nearbyAlternatives = bhkMatches;
+        } else if (data.bedrooms !== 'penthouse') {
+          const bhkMatches = nearbyAlternatives.filter(item => item.bedrooms === Number(data.bedrooms));
+          if (bhkMatches.length > 0) nearbyAlternatives = bhkMatches;
+        }
+      }
+      nearbyAlternatives = nearbyAlternatives.slice(0, 3);
       setShortlist(nearbyAlternatives);
       setSelectedLocality(localityDisplay);
       setBuyerFilterType(listingType);
       setHasSearched(true);
       setBuyerStep(5); // Transition to Post-Discovery Completed Mode!
 
-      const topSuggestions = nearbyAlternatives.map(p => {
-        const price = p.listing_type === 'rent' ? p.rent_inr : p.sale_price_inr;
-        const priceStr = price ? formatIndianCurrencyDisplay(price, p.listing_type || 'rent') : 'Price on request';
-        return `${p.society_name} in ${p.locality} (${p.bedrooms ? p.bedrooms + ' BHK' : 'Apartment'} at ${priceStr})`;
-      }).join(', ');
+      const propertyNames = formatPropertyNamesForVoice(nearbyAlternatives);
 
-      const noMatchMsg = `I couldn't find an exact matching property in ${localityDisplay} with those specific criteria. However, these are the suggested nearby properties for you: ${topSuggestions}. Would you like me to schedule a physical site visit for any of these properties?`;
+      const noMatchMsg = nearbyAlternatives.length > 0
+        ? `Sorry, no properties found. Here are the suggested properties for you: ${propertyNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`
+        : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: noMatchMsg }]);
-      speakText(noMatchMsg, true);
+      speakText(noMatchMsg, false);
+      setUnrecognizedRepeatCount(0);
       return;
     }
 
@@ -3587,25 +4231,67 @@ export default function App() {
     setHasSearched(true);
     setBuyerStep(5); // Transition to Post-Discovery Completed Mode!
 
-    // 7. Generate & Speak Final Verdict with explicit property recommendations
-    const topSuggestions = filtered.slice(0, 3).map(p => {
-      const price = p.listing_type === 'rent' ? p.rent_inr : p.sale_price_inr;
-      const priceStr = price ? formatIndianCurrencyDisplay(price, p.listing_type || 'rent') : 'Price on request';
-      return `${p.society_name} (${p.bedrooms ? p.bedrooms + ' BHK' : 'Apartment'} at ${priceStr})`;
-    }).join(', ');
+    // 7. Generate & Speak Final Verdict with explicit property recommendations covering all requested BHKs
+    let selectedProps = [];
+    if (Array.isArray(data.bedrooms) && data.bedrooms.length > 1) {
+      const bhkList = data.bedrooms.map(Number);
+      bhkList.forEach(bhk => {
+        const found = filtered.find(p => p.bedrooms === bhk && !selectedProps.includes(p));
+        if (found) selectedProps.push(found);
+      });
+      filtered.forEach(p => {
+        if (selectedProps.length < 3 && !selectedProps.includes(p)) {
+          selectedProps.push(p);
+        }
+      });
+    } else {
+      selectedProps = filtered.slice(0, 3);
+    }
+
+    const propertyNames = formatPropertyNamesForVoice(selectedProps);
 
     if (!budgetConstraintMet && data.maxBudget) {
-      const lowestAvailablePrice = filtered[0] ? (filtered[0].rent_inr || filtered[0].sale_price_inr) : 35000;
-      const prefNotice = data.familyPreferences ? ` matching your preference for ${data.familyPreferences}` : '';
-      const verdictMsg = `I couldn't find an available property strictly under ${formatIndianCurrencyDisplay(data.maxBudget, listingType)} in ${localityDisplay}${prefNotice}. The closest available options start at ${formatIndianCurrencyDisplay(lowestAvailablePrice, listingType)}. These are the suggested properties for you: ${topSuggestions}. You can inspect their details below or ask me to schedule a physical site visit anytime!`;
+      const verdictMsg = `Sorry, no properties found. Here are the suggested properties for you: ${propertyNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: verdictMsg }]);
-      speakText(verdictMsg, true);
+      speakText(verdictMsg, false);
     } else {
-      const prefNotice = data.familyPreferences ? ` matching your preference for ${data.familyPreferences}` : '';
-      const verdictMsg = `Found ${filtered.length} matching propert${filtered.length === 1 ? 'y' : 'ies'} in ${localityDisplay}${prefNotice}. These are the suggested properties for you: ${topSuggestions}. Would you like me to schedule a physical site visit for any of these properties?`;
+      const verdictMsg = `Here are the suggested properties for you: ${propertyNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: verdictMsg }]);
-      speakText(verdictMsg, true);
+      speakText(verdictMsg, false);
     }
+    setUnrecognizedRepeatCount(0);
+    } catch (err) {
+      console.error('Property search failed:', err);
+      const errMsg = 'Sorry, no properties found. Feel free to adjust your budget or locality preferences! Would you like us to continue?';
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: errMsg }]);
+      speakText(errMsg, false);
+    }
+  };
+
+  // Reset Session — clears state; user must click Speak to begin (same entry greeting on first Speak)
+  const handleResetSession = () => {
+    stopVoice();
+    setBuyerStep(0);
+    setSellerStep(0);
+    setBuyerData({
+      listingType: 'rent',
+      locality: '',
+      localities: [],
+      maxBudget: null,
+      bedrooms: null,
+      isPenthouse: false,
+      familyPreferences: ''
+    });
+    setShortlist(initialListings);
+    setSelectedLocality('All Bengaluru');
+    setBuyerFilterType('rent');
+    setHasSearched(false);
+    setShowFavoritesOnly(false);
+    setUnrecognizedRepeatCount(0);
+    setVoiceBookingStep(null);
+    setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
+    setBookingProperty(null);
+    setTranscriptHistory([]);
   };
 
   // Process User Query
@@ -3620,28 +4306,27 @@ export default function App() {
     const currentStep = buyerStepRef.current;
     const currentData = buyerDataRef.current;
 
-    // Mode Switch Overrides
-    if (q.includes('buyer mode') || q.includes('khareedna') || q.includes('buy karna')) {
-      handlePersonaChange('Buyer');
+    // Voice site-visit interview (date → time → name → phone → email → confirm)
+    if (voiceBookingStepRef.current) {
+      handleVoiceBookingTurn(userQuery, triggerAudio);
       return;
     }
+
+    // Purchase intent — rental-only platform; never advance scripted interview
+    if (isPurchaseIntent(userQuery)) {
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: PURCHASE_DECLINE_MSG }]);
+      if (triggerAudio) speakText(PURCHASE_DECLINE_MSG, true);
+      return;
+    }
+
     if (q.includes('seller mode') || q.includes('landlord mode') || q.includes('bechna hai')) {
       handlePersonaChange('Seller');
       return;
     }
 
-    // Cancel command
-    if (q.includes('cancel') || q.includes('start over') || q.includes('reset') || q.includes('radd')) {
-      setBuyerStep(0);
-      setSellerStep(0);
-      setBuyerData({ listingType: 'rent', locality: 'All Bengaluru', maxBudget: null, bedrooms: null, familyPreferences: '' });
-      setShortlist([...initialListings, ...sellerListings]);
-      setSelectedLocality('All Bengaluru');
-      setBuyerFilterType('all');
-      setHasSearched(false);
-      const cancelMsg = "Search reset. Listing all available properties from multiple locations across Bengaluru.";
-      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: cancelMsg }]);
-      if (triggerAudio) speakText(cancelMsg);
+    // Reset / Fresh session command
+    if (q.includes('fresh session') || q.includes('new session') || q.includes('start fresh') || q.includes('reset session') || q.includes('start over') || q.includes('clear chat') || (q.includes('cancel') && !voiceBookingStepRef.current) || q.includes('reset')) {
+      handleResetSession();
       return;
     }
 
@@ -3668,7 +4353,9 @@ export default function App() {
 
     // BUYER & RENTER INTERACTIVE DISCOVERY
     if (activePersona === 'Buyer' || activePersona === 'Renter') {
-      setUnrecognizedRepeatCount(0);
+      if (currentStep !== 3) {
+        setUnrecognizedRepeatCount(0);
+      }
 
       // 0. Graceful Closing Intent (Thank you / Bye / Done)
       const isClosingIntent = q.includes('thank') || q.includes('thanks') || q.includes('bye') || q.includes('that is all') || q.includes("that's all") || q.includes('nothing else') || q.includes('no thanks') || q.includes('done');
@@ -3679,87 +4366,186 @@ export default function App() {
         return;
       }
 
-      // 1. Site Visit Booking Intercept (Precise Intent Matching)
+      // 1. Property pick & site visit booking (after results are shown)
+      const matchedProperty = findShortlistPropertyFromQuery(userQuery, shortlist);
       const isBookingIntent = q.includes('book site visit') || q.includes('schedule visit') || q.includes('book visit') || q.includes('physical visit') || q.includes('book appointment') || (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour')));
-      if (isBookingIntent && shortlist.length > 0) {
-        const targetProp = shortlist.find(p => p.society_name && q.includes(p.society_name.toLowerCase())) || shortlist[0];
-        if (targetProp) {
-          setBookingProperty(targetProp);
-          const bookMsg = `Great! I've opened the physical site visit booking calendar for ${targetProp.society_name} in ${targetProp.locality}. You can pick your preferred date and time slot with your assigned broker!`;
-          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: bookMsg }]);
-          if (triggerAudio) speakText(bookMsg, false);
+      const isPropertyInterest = q.includes('like') || q.includes('love') || q.includes('interested') || q.includes('want this') || q.includes('want that') || q.includes('this one') || q.includes('that one') || q.includes('go with') || q.includes('pick this') || q.includes('choose');
+      const isSimpleYes = (q.trim() === 'yes' || q.includes('yes please') || q.includes('sure') || q.includes('go ahead') || q.includes('sounds good'));
+      const browseActive = hasSearched || currentStep >= 5;
+      const readyToBook = browseActive && shortlist.length > 0 && (
+        isBookingIntent ||
+        isSimpleYes ||
+        (isPropertyInterest && (matchedProperty || shortlist.length <= 5)) ||
+        (matchedProperty && !parsedPrice && extractBhksFromText(userQuery).length === 0 && extractedLocalities.length === 0 && currentStep >= 5)
+      );
+
+      if (readyToBook) {
+        const targetProp = matchedProperty || shortlist[0];
+        startVoiceSiteVisitBooking(targetProp, triggerAudio);
+        return;
+      }
+
+      // Parse parameters from latest user input — always evaluate fresh intent
+      const extractedBhks = extractBhksFromText(userQuery);
+      const isPenthouse = q.includes('penthouse');
+      let specifiedBhk = extractedBhks.length > 0
+        ? (extractedBhks.length === 1 ? extractedBhks[0] : extractedBhks)
+        : (isPenthouse ? 'penthouse' : null);
+
+      const hasSearchCriteria = hasRentalSearchCriteria({
+        localities: extractedLocalities,
+        budget: parsedPrice,
+        bhk: specifiedBhk,
+        isPenthouse,
+      });
+
+      // Intent-first rental flow — latest user input overrides scripted step sequence
+      if (isRentalIntent(userQuery) || hasSearchCriteria) {
+        const mergedLocalities = extractedLocalities.length > 0
+          ? extractedLocalities
+          : (currentData.localities && currentData.localities.length > 0 ? currentData.localities : []);
+        const mergedLocality = mergedLocalities.length > 0
+          ? mergedLocalities.join(' & ')
+          : (currentData.locality || '');
+        const mergedBudget = parsedPrice ?? currentData.maxBudget ?? null;
+        const mergedBhk = specifiedBhk ?? currentData.bedrooms ?? null;
+        const mergedPenthouse = isPenthouse || currentData.isPenthouse || false;
+
+        const mergedData = {
+          localities: mergedLocalities,
+          locality: mergedLocality,
+          maxBudget: mergedBudget,
+          bedrooms: mergedBhk,
+          isPenthouse: mergedPenthouse,
+          familyPreferences: userQuery,
+          listingType: 'rent',
+        };
+
+        if (isRentalIntent(userQuery) && !hasSearchCriteria && mergedLocalities.length === 0) {
+          setBuyerData(prev => ({ ...prev, listingType: 'rent' }));
+          setBuyerStep(1);
+          const rentalMsg = getMissingRentalPrompt(mergedData);
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: rentalMsg }]);
+          if (triggerAudio) speakText(rentalMsg, true);
+          return;
+        }
+
+        const readyToSearch = mergedLocalities.length > 0 && (mergedBudget || mergedBhk || mergedPenthouse);
+        if (readyToSearch) {
+          setBuyerData(prev => ({
+            ...prev,
+            listingType: 'rent',
+            locality: mergedLocality,
+            localities: mergedLocalities,
+            maxBudget: mergedBudget,
+            bedrooms: mergedBhk,
+            isPenthouse: mergedPenthouse,
+            familyPreferences: userQuery,
+          }));
+          if (mergedLocalities.length > 0) setSelectedLocality(mergedLocality);
+          executeBuyerFilter(mergedData);
+          return;
+        }
+
+        const missingPrompt = getMissingRentalPrompt(mergedData);
+        if (missingPrompt) {
+          setBuyerData(prev => ({
+            ...prev,
+            listingType: 'rent',
+            locality: mergedLocality || prev.locality,
+            localities: mergedLocalities.length > 0 ? mergedLocalities : prev.localities,
+            maxBudget: mergedBudget,
+            bedrooms: mergedBhk,
+            isPenthouse: mergedPenthouse,
+          }));
+          if (mergedLocalities.length > 0) {
+            setSelectedLocality(mergedLocality);
+            setBuyerStep(2);
+          } else {
+            setBuyerStep(1);
+          }
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: missingPrompt }]);
+          if (triggerAudio) speakText(missingPrompt, true);
           return;
         }
       }
 
-      // 2. Spatial / Transit Intercept
-      if (q.includes('metro') || q.includes('distance') || q.includes('station')) {
-        const targetLoc = extractedLocalities.length > 0 ? extractedLocalities[0] : (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala');
-        const metroMsg = `The nearest Namma Metro station to ${targetLoc} is Indiranagar Metro Station on the Purple Line, located under 1 km away.`;
+      // Spatial / Transit — only for standalone queries, not active rental searches
+      const isStandaloneMetroQuery = !hasSearchCriteria && !isRentalIntent(userQuery) && (
+        (q.includes('how far') || q.includes('where is') || q.includes('nearest metro') || q.includes('which metro') || q.includes('distance to metro')) || currentStep === 5
+      );
+      if (isStandaloneMetroQuery && (q.includes('metro') || q.includes('distance') || q.includes('station'))) {
+        const targetLoc = (extractedLocalities.length > 0 ? extractedLocalities[0] : null)
+          || (currentData.localities && currentData.localities.length > 0 ? currentData.localities[0] : null)
+          || (currentData.locality && currentData.locality !== 'All Bengaluru' ? currentData.locality : null)
+          || (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Indiranagar');
+
+        const metroInfo = getMetroInfoForLocality(targetLoc);
+        const metroMsg = `The nearest Namma Metro station to ${targetLoc} is ${metroInfo.station} on the ${metroInfo.line}, located ${metroInfo.distance} away. Is that fine, and would you like us to continue exploring properties or check site visit slots?`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: metroMsg }]);
         if (triggerAudio) speakText(metroMsg, true);
         return;
       }
 
-      // 3. Crime & Safety Telemetry Intercept
-      if (q.includes('safe') || q.includes('safety') || q.includes('crime') || q.includes('police')) {
-        const targetLoc = extractedLocalities.length > 0 ? extractedLocalities[0] : (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Koramangala');
-        const safetyMsg = `${targetLoc} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records.`;
+      // Crime & Safety — skip when user is actively searching for rentals
+      if (!hasSearchCriteria && !isRentalIntent(userQuery) && (q.includes('safe') || q.includes('safety') || q.includes('crime') || q.includes('police'))) {
+        const targetLoc = (extractedLocalities.length > 0 ? extractedLocalities[0] : null)
+          || (currentData.localities && currentData.localities.length > 0 ? currentData.localities[0] : null)
+          || (currentData.locality && currentData.locality !== 'All Bengaluru' ? currentData.locality : null)
+          || (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Indiranagar');
+
+        const safetyMsg = `${targetLoc} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records. Is that fine, and would you like us to continue exploring properties or check site visit slots?`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: safetyMsg }]);
         if (triggerAudio) speakText(safetyMsg, true);
         return;
       }
 
-      // Parse parameters from query
-      const isPenthouse = q.includes('penthouse');
-      let specifiedBhk = null;
-      if (q.includes('1bhk') || q.includes('1 bhk') || q.includes('1 bedroom')) specifiedBhk = 1;
-      else if (q.includes('2bhk') || q.includes('2 bhk') || q.includes('2 bedroom')) specifiedBhk = 2;
-      else if (q.includes('3bhk') || q.includes('3 bhk') || q.includes('3 bedroom')) specifiedBhk = 3;
-      else if (q.includes('4bhk') || q.includes('4 bhk') || q.includes('4 bedroom')) specifiedBhk = 4;
-      else if (isPenthouse) specifiedBhk = 'penthouse';
-
-      // One-shot execution if user specifies locality AND (budget OR BHK) in ANY turn
-      if (extractedLocalities.length > 0 && (parsedPrice || specifiedBhk)) {
-        const locDisplay = extractedLocalities.join(' & ');
-        executeBuyerFilter({
-          localities: extractedLocalities,
-          locality: locDisplay,
-          listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
-          maxBudget: parsedPrice,
-          bedrooms: isPenthouse ? 'penthouse' : (specifiedBhk || 2),
-          isPenthouse: isPenthouse,
-          familyPreferences: userQuery
-        });
-        return;
-      }
-
-      // STEP 0: AI asks initial neighborhood question if user hasn't specified any criteria yet
-      if (currentStep === 0 && extractedLocalities.length === 0 && !parsedPrice && !specifiedBhk && !isPenthouse) {
+      // Fallback: no clear intent yet — ask for locality once
+      if (currentStep <= 1 && !hasSearchCriteria && !isRentalIntent(userQuery)) {
         setBuyerStep(1);
-        const promptLocality = `Which neighborhood or locality in Bengaluru do you prefer? (For example, Koramangala, Indiranagar, HSR Layout, or Whitefield)`;
+        const promptLocality = 'Which neighborhood or locality in Bengaluru do you prefer?';
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
         if (triggerAudio) speakText(promptLocality, true);
         return;
       }
 
-      // DISCOVERY EXECUTION: Parse parameters & deliver suggested properties closing statement out loud!
-      const targetLocs = extractedLocalities.length > 0 
-        ? extractedLocalities 
-        : (currentData.localities && currentData.localities.length > 0 
-          ? currentData.localities 
-          : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : ['Koramangala']));
+      // STEP 5+: Post-discovery follow-up — book on interest, or refine search only when criteria change
+      if (currentStep >= 5) {
+        const isSearchRefine = extractedLocalities.length > 0 || parsedPrice || specifiedBhk || isPenthouse ||
+          isRentalIntent(userQuery) ||
+          q.includes('show me') || q.includes('find ') || q.includes('search') || q.includes('another') || q.includes('different');
 
-      executeBuyerFilter({
-        localities: targetLocs,
-        locality: targetLocs.join(' & '),
-        listingType: activePersona === 'Buyer' ? 'sale' : 'rent',
-        maxBudget: parsedPrice || currentData.maxBudget,
-        bedrooms: specifiedBhk || currentData.bedrooms,
-        isPenthouse: isPenthouse || currentData.isPenthouse || false,
-        familyPreferences: userQuery
-      });
-      return;
+        if (!isSearchRefine) {
+          const remindMsg = PROPERTY_BROWSE_VOICE_PROMPT;
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: remindMsg }]);
+          if (triggerAudio) speakText(remindMsg, true);
+          return;
+        }
+
+        const targetBhk = (specifiedBhk && (Array.isArray(specifiedBhk) ? specifiedBhk.length > 0 : true))
+          ? specifiedBhk
+          : currentData.bedrooms;
+        const targetPenthouse = isPenthouse || currentData.isPenthouse || false;
+
+        const targetLocs = extractedLocalities.length > 0
+          ? extractedLocalities
+          : (currentData.localities && currentData.localities.length > 0
+            ? currentData.localities
+            : (currentData.locality && currentData.locality !== 'All Bengaluru'
+              ? [currentData.locality]
+              : (selectedLocality !== 'All Bengaluru' ? [selectedLocality] : ['Koramangala'])));
+
+        executeBuyerFilter({
+          localities: targetLocs,
+          locality: targetLocs.join(' & '),
+          listingType: 'rent',
+          maxBudget: parsedPrice || currentData.maxBudget,
+          bedrooms: targetBhk,
+          isPenthouse: targetPenthouse,
+          familyPreferences: currentData.familyPreferences || userQuery
+        });
+        return;
+      }
     }
 
     // SELLER LISTING INTERVIEW
@@ -3824,15 +4610,10 @@ export default function App() {
       }
     }
 
-    const topSuggestions = shortlist.slice(0, 3).map(p => {
-      const price = p.listing_type === 'rent' ? p.rent_inr : p.sale_price_inr;
-      const priceStr = price ? formatIndianCurrencyDisplay(price, p.listing_type || 'rent') : 'Price on request';
-      return `${p.society_name} (${p.bedrooms ? p.bedrooms + ' BHK' : 'Apartment'} at ${priceStr})`;
-    }).join(', ');
-
+    const defaultNames = formatPropertyNamesForVoice(shortlist);
     const defaultMsg = shortlist.length > 0
-      ? `Found ${shortlist.length} verified propert${shortlist.length === 1 ? 'y' : 'ies'} in ${selectedLocality}. These are the suggested properties for you: ${topSuggestions}. Would you like me to schedule a physical site visit for any of these properties?`
-      : `We don't have any verified properties matching your current requirements in ${selectedLocality}. Feel free to adjust your budget or locality preferences!`;
+      ? `Here are the suggested properties for you: ${defaultNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`
+      : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
 
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: defaultMsg }]);
     if (triggerAudio) speakText(defaultMsg);
@@ -4001,8 +4782,9 @@ export default function App() {
   const displayedListings = useMemo(() => {
     let filtered = shortlist.filter(item => {
       const matchesLocality = selectedLocality === 'All Bengaluru' ||
-        selectedLocality.toLowerCase().includes(item.locality.toLowerCase()) ||
-        item.locality.toLowerCase().includes(selectedLocality.toLowerCase());
+        (buyerData && buyerData.localities && buyerData.localities.length > 0
+          ? buyerData.localities.some(loc => item.locality.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(item.locality.toLowerCase()))
+          : (selectedLocality.toLowerCase().includes(item.locality.toLowerCase()) || item.locality.toLowerCase().includes(selectedLocality.toLowerCase())));
       
       const matchesType = item.listing_type === 'rent';
 
@@ -4010,6 +4792,9 @@ export default function App() {
       if (buyerData && buyerData.bedrooms !== null && buyerData.bedrooms !== undefined) {
         if (buyerData.isPenthouse || buyerData.bedrooms === 'penthouse') {
           matchesBedrooms = item.bedrooms >= 4 || (item.society_name && item.society_name.toLowerCase().includes('penthouse'));
+        } else if (Array.isArray(buyerData.bedrooms) && buyerData.bedrooms.length > 0) {
+          const targetBhks = buyerData.bedrooms.map(b => Number(b)).filter(b => !isNaN(b));
+          matchesBedrooms = targetBhks.includes(item.bedrooms);
         } else {
           const targetBhk = Number(buyerData.bedrooms);
           if (!isNaN(targetBhk)) {
@@ -4054,6 +4839,7 @@ export default function App() {
           stopVoice();
           setActiveView('landing');
         }}
+        onResetSession={handleResetSession}
         favoriteCount={favorites.length}
         showFavoritesOnly={showFavoritesOnly}
         onToggleFavoritesOnly={() => setShowFavoritesOnly(!showFavoritesOnly)}
@@ -4087,6 +4873,9 @@ export default function App() {
                 onStopVoice={stopVoice}
                 onStartListening={startListening}
                 onSpeakGreeting={handleSpeakWelcome}
+                onResetSession={handleResetSession}
+                postDiscoveryResume={hasSearched && buyerStep >= 5}
+                voiceBookingActive={voiceBookingStep !== null}
               />
 
               {activePersona === 'Buyer' || activePersona === 'Renter' ? (

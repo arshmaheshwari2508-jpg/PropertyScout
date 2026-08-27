@@ -18,11 +18,14 @@ class ShortlistDeltaEngine:
         cmd_clean = command.strip().lower()
         delta_action = {}
 
-        # 1. Price cap removal (e.g. "drop properties above 40k", "remove rent over 35k")
-        max_price_match = re.search(r'(drop|remove|filter out|above|over|more than|exceeding)\s*(?:rent|price)?\s*(\d+)\s*(k|lakh)?', cmd_clean)
+        # 1. Price cap removal (e.g. "drop properties above 40k", "drop everything above ₹40k")
+        max_price_match = re.search(
+            r'(?:drop|remove|filter out|above|over|more than|exceeding).*?(?:₹|rs\.?)?\s*(\d+)\s*(k|lakh)?',
+            cmd_clean
+        )
         if max_price_match:
-            val = float(max_price_match.group(2))
-            unit = max_price_match.group(3)
+            val = float(max_price_match.group(1))
+            unit = max_price_match.group(2)
             if unit == 'k':
                 val *= 1000
             elif unit == 'lakh':

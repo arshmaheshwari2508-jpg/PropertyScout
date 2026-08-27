@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  Sparkles, Compass, MapPin, Building2, Home, HelpCircle, Info, LayoutGrid, Map, ArrowRightLeft, UserCheck, RefreshCw, Heart, Calculator, Key, Sun, Moon
+  Sparkles, Compass, MapPin, Building2, Home, HelpCircle, Info, LayoutGrid, Map, ArrowRightLeft, UserCheck, RefreshCw, RotateCcw, Heart, Calculator, Key, Sun, Moon
 } from 'lucide-react';
 
 export default function HeaderNav({
@@ -12,6 +12,7 @@ export default function HeaderNav({
   setSelectedLocality,
   onOpenModal,
   onGoHome,
+  onResetSession,
   favoriteCount = 0,
   showFavoritesOnly = false,
   onToggleFavoritesOnly,
@@ -206,30 +207,32 @@ export default function HeaderNav({
           </div>
         )}
 
-        {/* Persona Indicator Badge */}
+        {/* Persona Indicator Badge & New Session Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {activeView !== 'landing' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-canvas)', padding: '6px 12px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
               <span className="badge badge-rose" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '0.75rem' }}>
                 <Key size={13} /> AI Rental Scout
               </span>
-              
+
               <button
-                onClick={onGoHome}
+                onClick={onResetSession}
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'rgba(120, 161, 226, 0.15)',
+                  color: 'var(--accent-blue-100)',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
                 }}
-                title="Return to Home Screen"
+                title="Start a Fresh AI Scout Session"
               >
-                Home
+                <RotateCcw size={13} /> New Session
               </button>
             </div>
           )}

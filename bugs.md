@@ -6,6 +6,85 @@
 
 ## 📌 Active & Resolved Bug Audit Trail
 
+### 🔴 BUG 045: Voice Auto-Started on Entry & Mic Stayed Open After Property Suggestions
+- **Reported Issue:** Conversation started automatically when entering command view; after property suggestions the mic stayed open and interrupted exploration. Expected flow: **Speak → Suggestions → Pause → Explore → Speak → Site Visit**.
+- **Root Cause:**
+  1. `handleSelectRole` and `handleResetSession` called `startListening(true)` without user clicking Speak.
+  2. `executeBuyerFilter` used `speakText(verdictMsg, true)` reopening the mic immediately after suggestions.
+  3. No post-discovery resume prompt when user clicked Speak again to book a visit.
+- **Fix & Guardrail Rule:**
+  1. **Never auto-start voice** on role select or new session — only on **Speak** button click.
+  2. **Pause after suggestions:** Property verdict MUST use `speakText(msg, false)` so user can explore listings silently.
+  3. **Resume for booking:** When `hasSearched && buyerStep >= 5`, next Speak click plays site-visit resume prompt then opens mic.
+  4. Discovery interview steps (locality/budget/BHK) MAY keep `autoListenAfter = true` for continuous Q&A.
+- **Verification:** Enter command view → silent until Speak. After suggestions → mic off. Speak again → booking help prompt.
+
+---
+
+### 🔴 BUG 044: Stop Voice Button Does Not Fully Stop Agent (Speech + Mic Restart Loop)
+- **Reported Issue:** Clicking **Stop Voice** while the agent was speaking did not stop the agent; speech continued or the microphone reopened immediately.
+- **Root Cause:**
+  1. `VoiceHUD.toggleListening()` called `onStopVoice()` then immediately `onStartListening(false)`, restarting speech recognition after cancel.
+  2. `stopVoice()` in `App.jsx` did not clear `speechKeepAliveIntervalRef`, `sentenceWatchdogTimerRef`, `speechStartTimeoutRef`, or abort in-flight `speakText()` sentence chains — queued `setTimeout` / `onend` callbacks kept speaking or re-opened the mic.
+- **Fix & Guardrail Rule:**
+  1. **Stop Voice UI:** When `isPlayingAudio`, call `onStopVoice()` only — never auto-call `onStartListening`.
+  2. **Hard Stop:** `stopVoice()` MUST set `speechCancelledRef = true`, clear all speech/listen timers/intervals, cancel `speechSynthesis`, abort recognition, and null `activeRecognitionRef`.
+  3. **speakText Guard:** Every sentence advance, watchdog, keep-alive interval, and post-speech listen callback MUST check `speechCancelledRef` before continuing.
+- **Verification:** Click Stop Voice mid-sentence → speech stops, mic stays off, button shows **Touch to Speak**. Vite build passes.
+
+---
+
+### 🔴 BUG 043: New Session Used Wrong Greeting & Skipped Original Voice Entry Flow
+- **Reported Issue:** **New Session** played *"Starting a fresh session! Which neighborhood…"* and jumped to Step 1 locality prompt instead of the original *"Welcome to Property Scout! How should I help you today?"* entry flow.
+- **Root Cause:** `handleResetSession` used a custom `welcomeMsg` + `speakText()` instead of `startListening(true)` used by `handleSelectRole` on first voice entry. `buyerFilterType` reset to `'all'` instead of `'rent'`.
+- **Fix & Guardrail Rule:**
+  1. **New Session = Fresh Entry:** Clear transcript, reset all buyer/seller/booking state, then call `startListening(true)` (mic permission → standard greeting → auto-listen).
+  2. Greeting MUST remain: *"Welcome to Property Scout! How should I help you today?"*
+  3. Reset `buyerFilterType` to `'rent'` to match Renter command view defaults.
+- **Verification:** New Session → same greeting and Step 0 flow as landing-page voice entry.
+
+---
+
+### 🔴 BUG 042: Voice Site Visit Auto-Booked Without User Date, Time, Phone, or Email
+- **Reported Issue:** Voice agent booked site visits with hardcoded date/time and placeholder contact (`Voice User`, `customer@scout.ai`, `+91 9876543210`). No confirmation email reached the user.
+- **Root Cause:** `executeVoiceSiteVisitBooking` POSTed to `/api/schedule-site-visit` immediately with defaults, bypassing broker availability checks and user contact collection used by `BookingModal`.
+- **Fix & Guardrail Rule:**
+  1. **Voice booking interview:** date → time (with broker availability API) → name → phone → email → submit via shared `submitSiteVisitRequest()`.
+  2. NEVER auto-book with placeholder contact data.
+  3. Voice and **Schedule Visit** button MUST share `src/utils/siteVisitBooking.js`.
+- **Verification:** Voice booking collects all fields; confirmation email sent to user-provided email.
+
+---
+
+### 🔴 BUG 041: BHK Step Silent Failure — Nested `initialListings` Array Crashed Property Search
+- **Reported Issue:** After answering the BHK question, the agent did not respond or show properties.
+- **Root Cause:** `initialListings` was accidentally nested as `[[...properties]]`. `executeBuyerFilter` called `.filter()` on malformed data → runtime error, no verdict speech.
+- **Fix & Guardrail Rule:**
+  1. `initialListings` MUST be a flat array of listing objects.
+  2. Use `normalizeListings()` before any filter/search; search from live `shortlist` when available.
+  3. Wrap `executeBuyerFilter` in try/catch with spoken failure fallback.
+- **Verification:** Locality → budget → BHK → properties shown + voice verdict.
+
+---
+
+### 🔴 BUG 040: BHK Step Conversation Stopped After Results (Mic Not Reopened)
+- **Reported Issue:** Agent spoke property results but did not continue listening; conversation felt "stuck" after BHK.
+- **Root Cause:** `executeBuyerFilter` called `speakText(verdictMsg, false)` — `autoListenAfter` disabled so mic never reopened after verdict.
+- **Fix & Guardrail Rule:** Post-discovery verdicts MUST use `speakText(msg, true)` unless user explicitly tapped Stop Voice.
+- **Verification:** After property list verdict, mic reopens for site-visit interest or follow-up.
+
+---
+
+### 🔴 BUG 039: Voice Property Verdict Too Verbose & Site Visit Flow Misaligned
+- **Reported Issue:** Agent read long price/BHK/locality strings aloud; site visit booking did not match user expectations.
+- **Root Cause:** Verdict templates included full price and BHK strings; booking triggered before user picked a property.
+- **Fix & Guardrail Rule:**
+  1. Voice verdict: property **names only** + *"Have a look at the properties and let me know if you like any. I will book a site visit for you."*
+  2. Booking starts only after user expresses interest; then run full interview (BUG 042).
+- **Verification:** Voice lists names only; booking waits for user choice.
+
+---
+
 ### 🔴 BUG 038: Post-Discovery State Reset Loop (Step 0 Rejection / Repetitive Listing Loop)
 - **Reported Issue:** After the user answered all questionnaire questions, saying *"yes"*, *"book site visit"*, or asking follow-up questions caused the voice agent to either reject the query with *"We can't help you with this"* or repeat the property list again.
 - **Root Cause:**

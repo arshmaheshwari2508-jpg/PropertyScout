@@ -10,7 +10,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 from src.grounding.google_mcp_client import GoogleMCPClient
 
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/scout_bookings.db"))
+_DEFAULT_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/scout_bookings.db"))
+DB_PATH = os.path.abspath(os.getenv("BOOKINGS_DB_PATH", _DEFAULT_DB))
 
 INITIAL_BROKERS = [
     (1, "Rajesh Sharma", "rajesh.sharma@scout.ai", "+91 98765 11001", "Indiranagar", 4.90),

@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, CalendarCheck, CheckCircle2, FileText, Send, Phone, Mail, Sparkles, UserCheck, Calendar, AlertCircle, Clock, Check, Ban } from 'lucide-react';
+import {
+  SITE_VISIT_TIME_SLOTS,
+  fetchBrokerSlotAvailability,
+  submitSiteVisitRequest
+} from '../utils/siteVisitBooking';
 
 export default function BookingModal({ isOpen, onClose, property }) {
   if (!isOpen || !property) return null;
@@ -20,12 +25,7 @@ export default function BookingModal({ isOpen, onClose, property }) {
   const [bookingError, setBookingError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const availableSlots = [
-    "10:00 AM - 11:00 AM",
-    "11:30 AM - 12:30 PM",
-    "02:00 PM - 03:00 PM",
-    "04:00 PM - 05:00 PM"
-  ];
+  const availableSlots = SITE_VISIT_TIME_SLOTS;
 
   // Fetch slot availability whenever visitDate changes
   useEffect(() => {
@@ -35,25 +35,10 @@ export default function BookingModal({ isOpen, onClose, property }) {
 
   const fetchSlotAvailability = async (targetDate) => {
     setIsLoadingSlots(true);
-    const statusMap = {};
-    
-    for (const slot of availableSlots) {
-      try {
-        const res = await fetch(`http://localhost:8000/api/brokers/availability?visit_date=${targetDate}&time_slot=${encodeURIComponent(slot)}`);
-        const data = await res.json();
-        statusMap[slot] = {
-          is_available: data.is_available,
-          available_count: data.available_count || 0
-        };
-      } catch (err) {
-        statusMap[slot] = { is_available: true, available_count: 8 };
-      }
-    }
-    
+    const statusMap = await fetchBrokerSlotAvailability(targetDate);
     setSlotStatusMap(statusMap);
     setIsLoadingSlots(false);
 
-    // Auto-select first available slot if current selected is busy
     const currentStatus = statusMap[selectedSlot];
     if (currentStatus && !currentStatus.is_available) {
       const firstFree = availableSlots.find(s => statusMap[s]?.is_available);
@@ -75,26 +60,14 @@ export default function BookingModal({ isOpen, onClose, property }) {
     setBookingError(null);
     setIsSubmitting(true);
 
-    const askingPrice = property.listing_type === 'sale' 
-      ? `₹${(property.sale_price_inr / 10000000).toFixed(2)} Cr`
-      : `₹${property.rent_inr?.toLocaleString('en-IN')}/mo`;
-
     try {
-      const res = await fetch('http://localhost:8000/api/schedule-site-visit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_name: name,
-          user_email: email || 'customer@scout.ai',
-          phone: phone,
-          visit_date: visitDate,
-          time_slot: selectedSlot,
-          property_title: property.society_name,
-          locality: property.locality,
-          price: askingPrice
-        })
+      const data = await submitSiteVisitRequest(property, {
+        name,
+        email: email || 'customer@scout.ai',
+        phone,
+        visitDate,
+        timeSlot: selectedSlot
       });
-      const data = await res.json();
 
       if (!data.success) {
         setBookingError(data.message || 'All 8 property brokers are busy for this slot.');

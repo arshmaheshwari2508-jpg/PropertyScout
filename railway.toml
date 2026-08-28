@@ -6,3 +6,6 @@ startCommand = "uvicorn src.api.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
+
+[deploy.env]
+AUTO_SYNC_ON_STARTUP = "false"

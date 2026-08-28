@@ -20,9 +20,7 @@ from pydantic import BaseModel
 # Ensure root directory is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from src.agent.dialogue_manager import MultiPersonaDialogueManager
 from src.api.email_service import send_site_visit_email
-from src.data.broker_booking_db import BrokerBookingDB
 
 app = FastAPI(
     title="Voice-First AI Property Scout API",
@@ -48,22 +46,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from src.data.live_bengaluru_scraper import LiveBengaluruPropertyScraper
+_dialogue_manager = None
+_broker_db = None
+_live_scraper = None
 
-# Global dialogue manager, broker booking database, and live scraper instances
-dialogue_manager = MultiPersonaDialogueManager()
-broker_db = BrokerBookingDB()
-live_scraper = LiveBengaluruPropertyScraper()
+
+def get_dialogue_manager():
+    global _dialogue_manager
+    if _dialogue_manager is None:
+        from src.agent.dialogue_manager import MultiPersonaDialogueManager
+        _dialogue_manager = MultiPersonaDialogueManager()
+    return _dialogue_manager
+
+
+def get_broker_db():
+    global _broker_db
+    if _broker_db is None:
+        from src.data.broker_booking_db import BrokerBookingDB
+        _broker_db = BrokerBookingDB()
+    return _broker_db
+
+
+def get_live_scraper():
+    global _live_scraper
+    if _live_scraper is None:
+        from src.data.live_bengaluru_scraper import LiveBengaluruPropertyScraper
+        _live_scraper = LiveBengaluruPropertyScraper()
+    return _live_scraper
 
 
 def _run_bengaluru_rent_sync() -> None:
     """Syncs bengaluru.rent listings without blocking server startup or health checks."""
     print("🚀 Auto-syncing bengaluru.rent rental listings in background...")
     try:
-        live_scraper.run_live_scraper_sync()
-        dialogue_manager.listings_db.reload()
-        dialogue_manager.active_shortlist = dialogue_manager.listings_db.get_all_active_listings()
-        print(f"✅ Backend auto-sync complete! Active Rental Properties: {len(dialogue_manager.active_shortlist)}")
+        manager = get_dialogue_manager()
+        get_live_scraper().run_live_scraper_sync()
+        manager.listings_db.reload()
+        manager.active_shortlist = manager.listings_db.get_all_active_listings()
+        print(f"✅ Backend auto-sync complete! Active Rental Properties: {len(manager.active_shortlist)}")
     except Exception as e:
         print(f"Notice during backend auto-sync: {e}")
 
@@ -117,19 +137,15 @@ class SiteVisitRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
-    return {
-        "status": "healthy",
-        "active_persona": dialogue_manager.current_persona.value,
-        "listings_count": len(dialogue_manager.active_shortlist),
-        "brokers_count": len(broker_db.get_all_brokers())
-    }
+    return {"status": "healthy", "version": app.version}
 
 
 @app.get("/api/listings")
 def get_listings():
-    all_listings = dialogue_manager.listings_db.get_all_active_listings()
+    manager = get_dialogue_manager()
+    all_listings = manager.listings_db.get_all_active_listings()
     return {
-        "active_persona": dialogue_manager.current_persona.value,
+        "active_persona": manager.current_persona.value,
         "count": len(all_listings),
         "listings": all_listings
     }
@@ -138,10 +154,11 @@ def get_listings():
 @app.post("/api/scraper/run")
 def run_live_scraper(req: ScraperRequest = ScraperRequest()):
     """Triggers live real-time Bengaluru property web scraper, scrubs PII, and reloads listings DB."""
-    res = live_scraper.run_live_scraper_sync(req.locality)
+    manager = get_dialogue_manager()
+    res = get_live_scraper().run_live_scraper_sync(req.locality)
     # Sync dialogue manager shortlist with newly scraped database
-    dialogue_manager.listings_db.reload()
-    dialogue_manager.active_shortlist = dialogue_manager.listings_db.get_all_active_listings()
+    manager.listings_db.reload()
+    manager.active_shortlist = manager.listings_db.get_all_active_listings()
     return res
 
 
@@ -150,14 +167,14 @@ def get_brokers():
     """Returns list of all 8 brokers and booking counts."""
     return {
         "count": 8,
-        "brokers": broker_db.get_all_brokers()
+        "brokers": get_broker_db().get_all_brokers()
     }
 
 
 @app.get("/api/brokers/availability")
 def check_broker_availability(visit_date: str, time_slot: str = "10:00 AM - 11:00 AM"):
     """Returns free brokers for specified date and time slot."""
-    free_brokers = broker_db.get_available_brokers(visit_date, time_slot)
+    free_brokers = get_broker_db().get_available_brokers(visit_date, time_slot)
     return {
         "visit_date": visit_date,
         "time_slot": time_slot,
@@ -173,18 +190,18 @@ def process_chat(req: ChatRequest):
     if not req.user_query.strip():
         raise HTTPException(status_code=400, detail="Query string cannot be empty")
         
-    response = dialogue_manager.process_voice_turn(req.user_query, req.active_locality)
+    response = get_dialogue_manager().process_voice_turn(req.user_query, req.active_locality)
     return response
 
 
 @app.post("/api/persona/switch")
 def switch_persona(req: PersonaSwitchRequest):
-    return dialogue_manager.switch_persona(req.persona)
+    return get_dialogue_manager().switch_persona(req.persona)
 
 
 @app.post("/api/seller/intake")
 def seller_intake(req: SellerIntakeRequest):
-    return dialogue_manager.process_seller_intake(
+    return get_dialogue_manager().process_seller_intake(
         property_title=req.property_title,
         locality=req.locality,
         price_inr=req.price_inr,
@@ -200,7 +217,7 @@ def schedule_site_visit(req: SiteVisitRequest):
     Schedules physical site visit with 8-broker collision check,
     Google Calendar event sync, and HTML confirmation email.
     """
-    booking_res = broker_db.book_site_visit(
+    booking_res = get_broker_db().book_site_visit(
         user_name=req.user_name,
         user_email=req.user_email,
         phone=req.phone,

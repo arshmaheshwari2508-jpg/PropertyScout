@@ -11,8 +11,6 @@ Implements:
 import json
 import os
 from typing import List, Dict, Any, Optional
-from fastembed import TextEmbedding
-import chromadb
 
 
 class WeightedRAGEngine:
@@ -23,14 +21,17 @@ class WeightedRAGEngine:
     ):
         self.db_dir = db_dir
         self.model_name = model_name
-        self._embedding_model: Optional[TextEmbedding] = None
-        self._chroma_client: Optional[chromadb.PersistentClient] = None
+        self._embedding_model: Optional[Any] = None
+        self._chroma_client: Optional[Any] = None
         self._collection = None
 
     def _ensure_initialized(self) -> None:
         """Load FastEmbed + ChromaDB on first retrieval to keep API startup fast."""
         if self._embedding_model is not None:
             return
+
+        from fastembed import TextEmbedding
+        import chromadb
 
         self._embedding_model = TextEmbedding(model_name=self.model_name)
         self._chroma_client = chromadb.PersistentClient(path=self.db_dir)

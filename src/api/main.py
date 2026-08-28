@@ -11,6 +11,7 @@ Exposes local REST API endpoints for testing:
 
 import os
 import sys
+import threading
 from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,10 +56,9 @@ broker_db = BrokerBookingDB()
 live_scraper = LiveBengaluruPropertyScraper()
 
 
-@app.on_event("startup")
-def auto_sync_bengaluru_rent_listings():
-    """Automatically syncs bengaluru.rent rental listings in the background on API startup."""
-    print("🚀 Auto-syncing bengaluru.rent rental listings on backend startup...")
+def _run_bengaluru_rent_sync() -> None:
+    """Syncs bengaluru.rent listings without blocking server startup or health checks."""
+    print("🚀 Auto-syncing bengaluru.rent rental listings in background...")
     try:
         live_scraper.run_live_scraper_sync()
         dialogue_manager.listings_db.reload()
@@ -66,6 +66,20 @@ def auto_sync_bengaluru_rent_listings():
         print(f"✅ Backend auto-sync complete! Active Rental Properties: {len(dialogue_manager.active_shortlist)}")
     except Exception as e:
         print(f"Notice during backend auto-sync: {e}")
+
+
+@app.on_event("startup")
+def auto_sync_bengaluru_rent_listings():
+    """Kick off listing sync in a daemon thread so /api/health is available immediately."""
+    if os.getenv("AUTO_SYNC_ON_STARTUP", "true").lower() == "false":
+        print("Skipping bengaluru.rent auto-sync (AUTO_SYNC_ON_STARTUP=false)")
+        return
+
+    threading.Thread(
+        target=_run_bengaluru_rent_sync,
+        daemon=True,
+        name="bengaluru-rent-sync",
+    ).start()
 
 
 class ChatRequest(BaseModel):

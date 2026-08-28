@@ -23,13 +23,18 @@ class WeightedRAGEngine:
     ):
         self.db_dir = db_dir
         self.model_name = model_name
-        
-        # Initialize FastEmbed embedding model
-        self.embedding_model = TextEmbedding(model_name=self.model_name)
-        
-        # Connect to ChromaDB persistent collection
-        self.chroma_client = chromadb.PersistentClient(path=self.db_dir)
-        self.collection = self.chroma_client.get_or_create_collection(
+        self._embedding_model: Optional[TextEmbedding] = None
+        self._chroma_client: Optional[chromadb.PersistentClient] = None
+        self._collection = None
+
+    def _ensure_initialized(self) -> None:
+        """Load FastEmbed + ChromaDB on first retrieval to keep API startup fast."""
+        if self._embedding_model is not None:
+            return
+
+        self._embedding_model = TextEmbedding(model_name=self.model_name)
+        self._chroma_client = chromadb.PersistentClient(path=self.db_dir)
+        self._collection = self._chroma_client.get_or_create_collection(
             name="neighborhood_kb",
             metadata={"hnsw:space": "cosine"}
         )
@@ -43,8 +48,10 @@ class WeightedRAGEngine:
         """
         Performs metadata pre-filtered vector retrieval and weighted scoring.
         """
+        self._ensure_initialized()
+
         # Generate query vector embedding
-        raw_query_vector = list(self.embedding_model.embed([query]))[0]
+        raw_query_vector = list(self._embedding_model.embed([query]))[0]
         query_embedding = [float(x) for x in raw_query_vector]
         
         # Build ChromaDB metadata filter if locality is specified
@@ -53,14 +60,14 @@ class WeightedRAGEngine:
             where_filter = {"locality": locality}
             
         try:
-            results = self.collection.query(
+            results = self._collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
                 where=where_filter
             )
         except Exception as e:
             # Fallback search if exact locality metadata pre-filter finds no records
-            results = self.collection.query(
+            results = self._collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k
             )

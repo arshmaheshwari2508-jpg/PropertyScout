@@ -3,7 +3,6 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any
-from src.grounding.google_mcp_client import GoogleMCPClient
 
 def send_site_visit_email(
     user_name: str,
@@ -85,6 +84,7 @@ def send_site_visit_email(
     """
 
     # 1. Attempt sending via Google MCP Client (Gmail API) if authenticated
+    from src.grounding.google_mcp_client import GoogleMCPClient
     google_mcp = GoogleMCPClient()
     if google_mcp.is_authenticated():
         gmail_res = google_mcp.send_gmail_message(

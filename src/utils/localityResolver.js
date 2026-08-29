@@ -81,6 +81,8 @@ export const CANONICAL_LOCALITIES = [
 export const LOCALITY_ALIASES = {
   "cantonment": "Cantonment Area",
   "cantonment area": "Cantonment Area",
+  "containment": "Cantonment Area",
+  "containment area": "Cantonment Area",
   "hsr": "HSR Layout",
   "hsr layout": "HSR Layout",
   "jp nagar": "J. P. Nagar",
@@ -113,11 +115,17 @@ export function extractLocalitiesFromText(text) {
   }
 
   const sorted = [...CANONICAL_LOCALITIES].sort((a, b) => b.length - a.length);
+  const genericParts = new Set(['area', 'road', 'town', 'city', 'block', 'layout', 'nagar', 'puram', 'pura']);
   for (const loc of sorted) {
     const locLower = loc.toLowerCase();
     const parts = locLower.split('/').map((p) => p.trim());
-    if (q.includes(locLower) || parts.some((part) => part && q.includes(part))) {
+    if (q.includes(locLower)) {
       matched.add(loc);
+      continue;
+    }
+    for (const part of parts) {
+      if (!part || part.length < 5 || genericParts.has(part)) continue;
+      if (q.includes(part)) matched.add(loc);
     }
   }
 

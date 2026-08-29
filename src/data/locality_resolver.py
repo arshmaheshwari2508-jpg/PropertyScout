@@ -15,6 +15,8 @@ _LISTINGS_JSON = os.path.join(_ROOT, "data/listings.json")
 LOCALITY_ALIASES = {
     "cantonment": "Cantonment Area",
     "cantonment area": "Cantonment Area",
+    "containment": "Cantonment Area",
+    "containment area": "Cantonment Area",
     "hsr": "HSR Layout",
     "hsr layout": "HSR Layout",
     "jp nagar": "J. P. Nagar",

@@ -52,5 +52,13 @@ export async function submitSiteVisitRequest(property, draft) {
       price: getPropertyAskingPrice(property)
     })
   });
-  return res.json();
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || `Booking failed (${res.status})`);
+  }
+  if (!data.success) {
+    throw new Error(data.message || 'All brokers are busy for this slot.');
+  }
+  return data;
 }

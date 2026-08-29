@@ -203,6 +203,7 @@ const normalizeMatchText = (text) =>
     .toLowerCase()
     .replace(/emarald/g, 'emerald')
     .replace(/emerlad/g, 'emerald')
+    .replace(/containment/g, 'cantonment')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -244,6 +245,9 @@ const findShortlistPropertyFromQuery = (query, list) => {
 
 const isSiteVisitBookingIntent = (query, matchedProperty) => {
   const q = (query || '').toLowerCase();
+  const mentionsProperty = !!matchedProperty;
+  const mentionsBooking = q.includes('book') || q.includes('schedule') || q.includes('visit');
+  const showsInterest = q.includes('like') || q.includes('love') || q.includes('interested') || q.includes('want this') || q.includes('pick') || q.includes('choose');
   return (
     q.includes('book site visit') ||
     q.includes('schedule visit') ||
@@ -251,7 +255,8 @@ const isSiteVisitBookingIntent = (query, matchedProperty) => {
     q.includes('physical visit') ||
     q.includes('book appointment') ||
     (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour'))) ||
-    ((q.includes('book') || q.includes('schedule')) && !!matchedProperty)
+    ((q.includes('book') || q.includes('schedule')) && mentionsProperty) ||
+    (showsInterest && mentionsProperty)
   );
 };
 
@@ -3383,6 +3388,12 @@ export default function App() {
   const buyerDataRef = useRef(buyerData);
   buyerDataRef.current = buyerData;
 
+  const shortlistRef = useRef(shortlist);
+  shortlistRef.current = shortlist;
+
+  const hasSearchedRef = useRef(hasSearched);
+  hasSearchedRef.current = hasSearched;
+
   // Seller Intake Interview State Machine
   const [sellerStep, setSellerStep] = useState(0);
   const [sellerData, setSellerData] = useState({
@@ -3937,10 +3948,10 @@ export default function App() {
 
   const startVoiceSiteVisitBooking = (property, triggerAudio = true) => {
     if (!property) return;
-    setBookingProperty(property);
+    setVoiceBookingStep(null);
     setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
-    setVoiceBookingStep('date');
-    const msg = `Great choice! Let's schedule a site visit for ${property.society_name}. What date would you like to visit? You can say tomorrow or a specific date.`;
+    setBookingProperty(property);
+    const msg = `Perfect! I've opened the site visit booking form for ${property.society_name}. Choose your date, time slot, and email — I'll send the confirmation right away.`;
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
     if (triggerAudio) speakText(msg, true);
   };
@@ -4373,21 +4384,26 @@ export default function App() {
       }
 
       // 1. Property pick & site visit booking (after results are shown)
-      const matchedProperty = findShortlistPropertyFromQuery(userQuery, shortlist);
-      const isBookingIntent = isSiteVisitBookingIntent(userQuery, matchedProperty);
+      const activeShortlist = shortlistRef.current || shortlist;
+      const matchedProperty = findShortlistPropertyFromQuery(userQuery, activeShortlist);
+      const bookingIntent = isSiteVisitBookingIntent(userQuery, matchedProperty);
+      const browseActive = hasSearchedRef.current || hasSearched || currentStep >= 5;
+
+      if (browseActive && activeShortlist.length > 0 && bookingIntent) {
+        const targetProp = matchedProperty || activeShortlist[0];
+        startVoiceSiteVisitBooking(targetProp, triggerAudio);
+        return;
+      }
+
       const isPropertyInterest = q.includes('like') || q.includes('love') || q.includes('interested') || q.includes('want this') || q.includes('want that') || q.includes('this one') || q.includes('that one') || q.includes('go with') || q.includes('pick this') || q.includes('choose');
       const isSimpleYes = (q.trim() === 'yes' || q.includes('yes please') || q.includes('sure') || q.includes('go ahead') || q.includes('sounds good'));
-      const browseActive = hasSearched || currentStep >= 5;
-      const readyToBook = browseActive && shortlist.length > 0 && (
-        isBookingIntent ||
+      const readyToBook = browseActive && activeShortlist.length > 0 && (
         (isSimpleYes && matchedProperty) ||
-        (isPropertyInterest && matchedProperty) ||
-        (matchedProperty && (q.includes('book') || q.includes('schedule')) && currentStep >= 5)
+        (isPropertyInterest && matchedProperty)
       );
 
       if (readyToBook) {
-        const targetProp = matchedProperty || shortlist[0];
-        startVoiceSiteVisitBooking(targetProp, triggerAudio);
+        startVoiceSiteVisitBooking(matchedProperty, triggerAudio);
         return;
       }
 
@@ -4405,8 +4421,8 @@ export default function App() {
         isPenthouse,
       });
 
-      // Intent-first rental flow — latest user input overrides scripted step sequence
-      if (isRentalIntent(userQuery) || hasSearchCriteria) {
+      // Intent-first rental flow — skip when user is trying to book a shortlisted property
+      if ((isRentalIntent(userQuery) || hasSearchCriteria) && !bookingIntent) {
         const mergedLocalities = extractedLocalities.length > 0
           ? extractedLocalities
           : (currentData.localities && currentData.localities.length > 0 ? currentData.localities : []);
@@ -4561,9 +4577,10 @@ export default function App() {
 
       // STEP 5+: Post-discovery follow-up — book on interest, or refine search only when criteria change
       if (currentStep >= 5) {
-        const postMatchProperty = findShortlistPropertyFromQuery(userQuery, shortlist);
+        const postShortlist = shortlistRef.current || shortlist;
+        const postMatchProperty = findShortlistPropertyFromQuery(userQuery, postShortlist);
         if (isSiteVisitBookingIntent(userQuery, postMatchProperty)) {
-          startVoiceSiteVisitBooking(postMatchProperty || shortlist[0], triggerAudio);
+          startVoiceSiteVisitBooking(postMatchProperty || postShortlist[0], triggerAudio);
           return;
         }
 

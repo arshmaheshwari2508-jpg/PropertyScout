@@ -48,7 +48,10 @@ export default function BookingModal({ isOpen, onClose, property }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name || !phone || !visitDate || !selectedSlot) return;
+    if (!name || !phone || !visitDate || !selectedSlot || !email || !email.includes('@')) {
+      setBookingError('Please enter your name, phone, visit date, time slot, and a valid email address.');
+      return;
+    }
 
     // Check if slot is available
     const slotInfo = slotStatusMap[selectedSlot];
@@ -63,7 +66,7 @@ export default function BookingModal({ isOpen, onClose, property }) {
     try {
       const data = await submitSiteVisitRequest(property, {
         name,
-        email: email || 'customer@scout.ai',
+        email,
         phone,
         visitDate,
         timeSlot: selectedSlot
@@ -78,22 +81,8 @@ export default function BookingModal({ isOpen, onClose, property }) {
       setBookingResult(data);
       setIsSubmitted(true);
     } catch (err) {
-      console.warn("Backend API booking warning:", err);
-      // Fallback simulated success
-      setBookingResult({
-        success: true,
-        time_slot: selectedSlot,
-        broker: {
-          name: "Rajesh Sharma",
-          phone: "+91 98765 11001",
-          email: "rajesh.sharma@scout.ai",
-          rating: 4.90
-        },
-        google_calendar: {
-          calendar_html_link: "https://calendar.google.com"
-        }
-      });
-      setIsSubmitted(true);
+      console.warn('Site visit booking failed:', err);
+      setBookingError(err.message || 'Could not complete booking. Please check your connection and try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -421,9 +410,15 @@ export default function BookingModal({ isOpen, onClose, property }) {
             )}
 
             {/* Email Status Banner */}
+            {(() => {
+              const emailStatus = bookingResult?.email_dispatch;
+              const delivered = emailStatus?.delivered === true;
+              return (
             <div style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.08))',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
+              background: delivered
+                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.08))'
+                : 'linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(245, 158, 11, 0.08))',
+              border: delivered ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.35)',
               borderRadius: '14px',
               padding: '14px',
               textAlign: 'left',
@@ -431,13 +426,17 @@ export default function BookingModal({ isOpen, onClose, property }) {
               flexDirection: 'column',
               gap: '6px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-primary)', fontSize: '0.85rem', fontWeight: 700 }}>
-                <Mail size={16} /> Confirmation Email Dispatched!
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: delivered ? 'var(--accent-primary)' : '#b45309', fontSize: '0.85rem', fontWeight: 700 }}>
+                <Mail size={16} /> {delivered ? 'Confirmation Email Sent!' : 'Booking Saved — Email Pending'}
               </div>
               <p style={{ fontSize: '0.775rem', color: 'var(--text-secondary)' }}>
-                Confirmation sent to <strong>{email || 'your registered email'}</strong> with assigned broker details and Google Calendar event sync link.
+                {delivered
+                  ? <>Confirmation sent to <strong>{email}</strong> with broker details and calendar link.</>
+                  : <>Your visit is booked, but the confirmation email could not be sent. Please save broker contact details below.</>}
               </p>
             </div>
+              );
+            })()}
 
             <button onClick={onClose} className="btn-primary" style={{ justifyContent: 'center' }}>
               Done & Return to Workspace

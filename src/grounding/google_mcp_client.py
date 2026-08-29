@@ -47,24 +47,53 @@ class GoogleMCPClient:
         self._load_credentials()
 
     def _load_credentials(self):
-        """Loads OAuth 2.0 credentials from token.json."""
+        """Loads OAuth 2.0 credentials from env var or token.json."""
+        import json
+
+        token_json = os.getenv("GOOGLE_TOKEN_JSON", "").strip()
+        if token_json:
+            try:
+                data = json.loads(token_json)
+                self._set_credentials_from_data(data)
+                print("✅ Successfully loaded Google OAuth credentials from GOOGLE_TOKEN_JSON!")
+                return
+            except Exception as e:
+                print(f"⚠️ Failed to load GOOGLE_TOKEN_JSON: {e}")
+                self.creds = None
+
         if os.path.exists(self.token_path):
             try:
-                import json
                 with open(self.token_path, "r") as f:
                     data = json.load(f)
-                self.creds = Credentials(
-                    token=data.get("token"),
-                    refresh_token=data.get("refresh_token"),
-                    token_uri=data.get("token_uri", "https://oauth2.googleapis.com/token"),
-                    client_id=data.get("client_id"),
-                    client_secret=data.get("client_secret"),
-                    scopes=SCOPES
-                )
+                self._set_credentials_from_data(data)
                 print("✅ Successfully loaded Google OAuth credentials from token.json!")
             except Exception as e:
                 print(f"⚠️ Failed to load existing token.json: {e}")
                 self.creds = None
+
+    def _set_credentials_from_data(self, data: dict):
+        self.creds = Credentials(
+            token=data.get("token"),
+            refresh_token=data.get("refresh_token"),
+            token_uri=data.get("token_uri", "https://oauth2.googleapis.com/token"),
+            client_id=data.get("client_id"),
+            client_secret=data.get("client_secret"),
+            scopes=data.get("scopes") or SCOPES,
+        )
+
+    def _ensure_valid_credentials(self) -> bool:
+        if not self.creds:
+            return False
+        if self.creds.valid:
+            return True
+        if self.creds.expired and self.creds.refresh_token:
+            try:
+                self.creds.refresh(Request())
+                return True
+            except Exception as e:
+                print(f"⚠️ Google OAuth token refresh failed: {e}")
+                return False
+        return False
 
     def get_authorization_url(self, port: int = 8090) -> str:
         """Returns authorization URL for OAuth sign-in."""
@@ -77,7 +106,7 @@ class GoogleMCPClient:
 
     def is_authenticated(self) -> bool:
         """Returns True if valid OAuth credentials are available."""
-        return self.creds is not None and self.creds.valid
+        return self._ensure_valid_credentials()
 
     def authenticate_interactive(self, port: int = 8080) -> bool:
         """

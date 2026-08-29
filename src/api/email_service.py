@@ -53,7 +53,7 @@ def _dispatch_via_smtp(
     user_email: str,
     msg: MIMEMultipart,
 ) -> Tuple[bool, Dict[str, Any]]:
-    timeout = int(os.getenv("SMTP_TIMEOUT", "15"))
+    timeout = int(os.getenv("SMTP_TIMEOUT", "5"))
     ports_to_try = []
     for port in (smtp_port, 465, 587):
         if port not in ports_to_try:

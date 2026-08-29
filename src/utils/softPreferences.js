@@ -127,7 +127,7 @@ export function getPropertyPreferenceReason(property, preferences = []) {
 }
 
 export function buildShortlistVerdict({ properties = [], preferences = [], locality = '', budget = null, bedrooms = null }) {
-  const names = properties.slice(0, 3).map((p) => p.society_name).join(', ');
+  const count = properties.length;
   const parts = [];
 
   if (locality) parts.push(`in ${locality}`);
@@ -144,7 +144,7 @@ export function buildShortlistVerdict({ properties = [], preferences = [], local
   const reason = getPropertyPreferenceReason(properties[0], preferences);
   const reasonClause = reason ? ` ${reason}` : '';
 
-  return `I found ${properties.length} rental ${properties.length === 1 ? 'option' : 'options'}${criteriaText}.${prefClause}${reasonClause} Here are the top picks: ${names}.`;
+  return `I found ${count} rental ${count === 1 ? 'option' : 'options'}${criteriaText}.${prefClause}${reasonClause} They're on your screen — tell me which one you'd like to book a site visit for.`;
 }
 
 export { PREFERENCE_RULES };

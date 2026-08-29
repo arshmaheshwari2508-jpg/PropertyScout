@@ -196,28 +196,43 @@ const normalizeListings = (list) => {
   return flat.filter((item) => item && item.listing_id);
 };
 
-const PROPERTY_BROWSE_VOICE_PROMPT = 'Have a look at the properties and let me know if you like any. I will book a site visit for you.';
+const PROPERTY_BROWSE_VOICE_PROMPT = 'Have a look at the properties on your screen and tell me which one you would like to book a site visit for.';
 
-const formatPropertyNamesForVoice = (properties, limit = 3) => {
-  if (!properties?.length) return '';
-  return properties.slice(0, limit).map((p) => p.society_name).filter(Boolean).join(', ');
-};
+const normalizeMatchText = (text) =>
+  (text || '')
+    .toLowerCase()
+    .replace(/emarald/g, 'emerald')
+    .replace(/emerlad/g, 'emerald')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const stripBookingWords = (text) =>
+  normalizeMatchText(text)
+    .replace(/\b(book|schedule|site visit|visit|for|the|a|please|want|this|that|property|flat|apartment)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const findShortlistPropertyFromQuery = (query, list) => {
   if (!query || !list?.length) return null;
-  const q = query.toLowerCase();
+  const q = normalizeMatchText(query);
+  const stripped = stripBookingWords(query);
   const candidates = list.filter((p) => p?.society_name);
 
-  const exact = candidates.find((p) => q.includes(p.society_name.toLowerCase()));
-  if (exact) return exact;
+  for (const p of candidates) {
+    const name = normalizeMatchText(p.society_name);
+    if (q.includes(name)) return p;
+    if (stripped && name.includes(stripped)) return p;
+  }
 
   let best = null;
   let bestScore = 0;
   for (const p of candidates) {
-    const tokens = p.society_name.toLowerCase().split(/[\s,&\-()]+/).filter((t) => t.length > 3);
+    const name = normalizeMatchText(p.society_name);
+    const tokens = name.split(/[\s,&\-()]+/).filter((t) => t.length >= 3);
     let score = 0;
     for (const t of tokens) {
-      if (q.includes(t)) score += t.length;
+      if (q.includes(t) || stripped.includes(t)) score += t.length;
     }
     if (score > bestScore) {
       bestScore = score;
@@ -225,6 +240,19 @@ const findShortlistPropertyFromQuery = (query, list) => {
     }
   }
   return bestScore >= 4 ? best : null;
+};
+
+const isSiteVisitBookingIntent = (query, matchedProperty) => {
+  const q = (query || '').toLowerCase();
+  return (
+    q.includes('book site visit') ||
+    q.includes('schedule visit') ||
+    q.includes('book visit') ||
+    q.includes('physical visit') ||
+    q.includes('book appointment') ||
+    (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour'))) ||
+    ((q.includes('book') || q.includes('schedule')) && !!matchedProperty)
+  );
 };
 
 const formatVisitDateForSpeech = (dateStr) => {
@@ -4138,10 +4166,8 @@ export default function App() {
       setHasSearched(true);
       setBuyerStep(5); // Transition to Post-Discovery Completed Mode!
 
-      const propertyNames = formatPropertyNamesForVoice(nearbyAlternatives);
-
       const noMatchMsg = nearbyAlternatives.length > 0
-        ? `Sorry, no properties found. Here are the suggested properties for you: ${propertyNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`
+        ? `Sorry, no exact matches in that area. I've put ${nearbyAlternatives.length} nearby alternatives on your screen. ${PROPERTY_BROWSE_VOICE_PROMPT}`
         : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: noMatchMsg }]);
       speakText(noMatchMsg, false);
@@ -4223,7 +4249,6 @@ export default function App() {
       selectedProps = filtered.slice(0, 3);
     }
 
-    const propertyNames = formatPropertyNamesForVoice(selectedProps);
     const verdictMsg = buildShortlistVerdict({
       properties: selectedProps,
       preferences: softPreferences,
@@ -4349,15 +4374,15 @@ export default function App() {
 
       // 1. Property pick & site visit booking (after results are shown)
       const matchedProperty = findShortlistPropertyFromQuery(userQuery, shortlist);
-      const isBookingIntent = q.includes('book site visit') || q.includes('schedule visit') || q.includes('book visit') || q.includes('physical visit') || q.includes('book appointment') || (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour')));
+      const isBookingIntent = isSiteVisitBookingIntent(userQuery, matchedProperty);
       const isPropertyInterest = q.includes('like') || q.includes('love') || q.includes('interested') || q.includes('want this') || q.includes('want that') || q.includes('this one') || q.includes('that one') || q.includes('go with') || q.includes('pick this') || q.includes('choose');
       const isSimpleYes = (q.trim() === 'yes' || q.includes('yes please') || q.includes('sure') || q.includes('go ahead') || q.includes('sounds good'));
       const browseActive = hasSearched || currentStep >= 5;
       const readyToBook = browseActive && shortlist.length > 0 && (
         isBookingIntent ||
-        isSimpleYes ||
-        (isPropertyInterest && (matchedProperty || shortlist.length <= 5)) ||
-        (matchedProperty && !parsedPrice && extractBhksFromText(userQuery).length === 0 && extractedLocalities.length === 0 && currentStep >= 5)
+        (isSimpleYes && matchedProperty) ||
+        (isPropertyInterest && matchedProperty) ||
+        (matchedProperty && (q.includes('book') || q.includes('schedule')) && currentStep >= 5)
       );
 
       if (readyToBook) {
@@ -4536,6 +4561,12 @@ export default function App() {
 
       // STEP 5+: Post-discovery follow-up — book on interest, or refine search only when criteria change
       if (currentStep >= 5) {
+        const postMatchProperty = findShortlistPropertyFromQuery(userQuery, shortlist);
+        if (isSiteVisitBookingIntent(userQuery, postMatchProperty)) {
+          startVoiceSiteVisitBooking(postMatchProperty || shortlist[0], triggerAudio);
+          return;
+        }
+
         const isSearchRefine = extractedLocalities.length > 0 || parsedPrice || specifiedBhk || isPenthouse ||
           isRentalIntent(userQuery) ||
           q.includes('show me') || q.includes('find ') || q.includes('search') || q.includes('another') || q.includes('different');
@@ -4636,9 +4667,8 @@ export default function App() {
       }
     }
 
-    const defaultNames = formatPropertyNamesForVoice(shortlist);
     const defaultMsg = shortlist.length > 0
-      ? `Here are the suggested properties for you: ${defaultNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`
+      ? `${PROPERTY_BROWSE_VOICE_PROMPT}`
       : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
 
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: defaultMsg }]);

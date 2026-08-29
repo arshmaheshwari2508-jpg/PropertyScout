@@ -30,8 +30,18 @@ import {
   isRentalIntent,
   hasRentalSearchCriteria,
   getMissingRentalPrompt,
+  getRequirementsPrompt,
   PURCHASE_DECLINE_MSG
 } from './utils/intentDetection';
+import { extractLocalitiesFromText, extractLocalityFromText } from './utils/localityResolver';
+import {
+  extractSoftPreferences,
+  mergeSoftPreferences,
+  hasNoPreference,
+  scorePropertyForPreferences,
+  buildShortlistVerdict,
+  getPropertyPreferenceReason
+} from './utils/softPreferences';
 import { apiUrl } from './utils/apiBase';
 
 // Word-to-number dictionary for English/Hindi spoken numbers
@@ -99,54 +109,6 @@ const formatIndianCurrencyDisplay = (amount, listingType) => {
     return `${lakh} Lakh rupees`;
   }
   return `${amount.toLocaleString('en-IN')} rupees${listingType === 'rent' ? ' per month' : ''}`;
-};
-
-// Helper function to extract multiple localities matching common voice variations
-const extractLocalitiesFromText = (text) => {
-  if (!text) return [];
-  const q = text.toLowerCase();
-  const matched = [];
-
-  if (q.includes('koramangala') || q.includes('kormangala') || q.includes('kormangla') || q.includes('kora mangala') || q.includes('kora')) {
-    matched.push('Koramangala');
-  }
-  if (q.includes('indiranagar') || q.includes('indira nagar') || q.includes('indra nagar') || q.includes('indiranagr')) {
-    matched.push('Indiranagar');
-  }
-  if (q.includes('hsr') || q.includes('hsr layout')) {
-    matched.push('HSR Layout');
-  }
-  if (q.includes('whitefield') || q.includes('white field')) {
-    matched.push('Whitefield');
-  }
-  if (q.includes('bellandur') || q.includes('belandur')) {
-    matched.push('Bellandur');
-  }
-  if (q.includes('hebbal') || q.includes('hebal')) {
-    matched.push('Hebbal');
-  }
-  if (q.includes('mahadevapura') || q.includes('mahadev pura')) {
-    matched.push('Mahadevapura');
-  }
-  if (q.includes('electronic city') || q.includes('ecity') || q.includes('e-city')) {
-    matched.push('Electronic City');
-  }
-  if (q.includes('jayanagar') || q.includes('jaya nagar')) {
-    matched.push('Jayanagar');
-  }
-  if (q.includes('jp nagar') || q.includes('jpnagar')) {
-    matched.push('JP Nagar');
-  }
-  if (q.includes('marathahalli') || q.includes('marathalli')) {
-    matched.push('Marathahalli');
-  }
-
-  return matched;
-};
-
-const extractLocalityFromText = (text) => {
-  const locs = extractLocalitiesFromText(text);
-  return locs.length > 0 ? locs[0] : null;
 };
 
 const METRO_MAP = {
@@ -3382,7 +3344,9 @@ export default function App() {
     maxBudget: null,
     bedrooms: null,
     isPenthouse: false,
-    familyPreferences: ''
+    familyPreferences: '',
+    softPreferences: [],
+    requirementsAsked: false
   });
 
   const buyerStepRef = useRef(buyerStep);
@@ -4202,8 +4166,11 @@ export default function App() {
     }
 
     // 6. Furnishing Filter (Fully Furnished / Semi-Furnished matching)
-    if (data.familyPreferences && data.familyPreferences.toLowerCase().includes('furnished')) {
-      const isFully = data.familyPreferences.toLowerCase().includes('fully');
+    const softPreferences = data.softPreferences || [];
+    const furnishedPref = softPreferences.find((pref) => pref.id === 'furnished');
+    const preferenceText = (data.familyPreferences || '').toLowerCase();
+    if (furnishedPref || preferenceText.includes('furnished')) {
+      const isFully = preferenceText.includes('fully');
       const furnishedMatch = filtered.filter(item => {
         if (!item.furnishing) return true;
         if (isFully) return item.furnishing.toLowerCase().includes('fully');
@@ -4214,6 +4181,12 @@ export default function App() {
       }
     }
 
+    if (softPreferences.length > 0) {
+      filtered = [...filtered].sort(
+        (a, b) => scorePropertyForPreferences(b, softPreferences) - scorePropertyForPreferences(a, softPreferences)
+      );
+    }
+
     // Update buyer state so UI remains strictly in sync
     setBuyerData(prev => ({
       ...prev,
@@ -4221,7 +4194,9 @@ export default function App() {
       localities: targetLocalities,
       bedrooms: data.bedrooms,
       isPenthouse: data.isPenthouse || false,
-      maxBudget: data.maxBudget
+      maxBudget: data.maxBudget,
+      softPreferences: data.softPreferences || prev.softPreferences || [],
+      requirementsAsked: true,
     }));
 
     // Always update UI state & reset interview step to finish voice flow
@@ -4249,15 +4224,22 @@ export default function App() {
     }
 
     const propertyNames = formatPropertyNamesForVoice(selectedProps);
+    const verdictMsg = buildShortlistVerdict({
+      properties: selectedProps,
+      preferences: softPreferences,
+      locality: localityDisplay,
+      budget: data.maxBudget,
+      bedrooms: data.bedrooms,
+    });
 
     if (!budgetConstraintMet && data.maxBudget) {
-      const verdictMsg = `Sorry, no properties found. Here are the suggested properties for you: ${propertyNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`;
-      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: verdictMsg }]);
-      speakText(verdictMsg, false);
+      const budgetMsg = `I couldn't find exact matches within your budget, but these are the closest options in ${localityDisplay}. ${verdictMsg} ${PROPERTY_BROWSE_VOICE_PROMPT}`;
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: budgetMsg }]);
+      speakText(budgetMsg, false);
     } else {
-      const verdictMsg = `Here are the suggested properties for you: ${propertyNames}. ${PROPERTY_BROWSE_VOICE_PROMPT}`;
-      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: verdictMsg }]);
-      speakText(verdictMsg, false);
+      const fullMsg = `${verdictMsg} ${PROPERTY_BROWSE_VOICE_PROMPT}`;
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: fullMsg }]);
+      speakText(fullMsg, false);
     }
     setUnrecognizedRepeatCount(0);
     } catch (err) {
@@ -4280,7 +4262,9 @@ export default function App() {
       maxBudget: null,
       bedrooms: null,
       isPenthouse: false,
-      familyPreferences: ''
+      familyPreferences: '',
+      softPreferences: [],
+      requirementsAsked: false
     });
     setShortlist(initialListings);
     setSelectedLocality('All Bengaluru');
@@ -4348,9 +4332,6 @@ export default function App() {
       });
     };
 
-    // Specific amenity/POI soft preference terms (hospital, doctor, clinic, metro, school, gym, etc.)
-    const isSpecificSoftPref = q.includes('hospital') || q.includes('doctor') || q.includes('clinic') || q.includes('medical') || q.includes('health') || q.includes('metro') || q.includes('school') || q.includes('gym') || q.includes('park') || q.includes('furnished') || q.includes('pet') || q.includes('pets') || q.includes('dog') || q.includes('cat') || q.includes('balcony') || q.includes('pool') || q.includes('lift') || q.includes('security');
-
     // BUYER & RENTER INTERACTIVE DISCOVERY
     if (activePersona === 'Buyer' || activePersona === 'Renter') {
       if (currentStep !== 3) {
@@ -4411,6 +4392,9 @@ export default function App() {
         const mergedBhk = specifiedBhk ?? currentData.bedrooms ?? null;
         const mergedPenthouse = isPenthouse || currentData.isPenthouse || false;
 
+        const mergedSoftPreferences = mergeSoftPreferences(currentData.softPreferences, userQuery);
+        const prefsInUtterance = extractSoftPreferences(userQuery).length > 0 || hasNoPreference(userQuery);
+
         const mergedData = {
           localities: mergedLocalities,
           locality: mergedLocality,
@@ -4419,6 +4403,7 @@ export default function App() {
           isPenthouse: mergedPenthouse,
           familyPreferences: userQuery,
           listingType: 'rent',
+          softPreferences: mergedSoftPreferences,
         };
 
         if (isRentalIntent(userQuery) && !hasSearchCriteria && mergedLocalities.length === 0) {
@@ -4432,6 +4417,26 @@ export default function App() {
 
         const readyToSearch = mergedLocalities.length > 0 && (mergedBudget || mergedBhk || mergedPenthouse);
         if (readyToSearch) {
+          if (!currentData.requirementsAsked && !prefsInUtterance) {
+            setBuyerData(prev => ({
+              ...prev,
+              listingType: 'rent',
+              locality: mergedLocality,
+              localities: mergedLocalities,
+              maxBudget: mergedBudget,
+              bedrooms: mergedBhk,
+              isPenthouse: mergedPenthouse,
+              familyPreferences: userQuery,
+              requirementsAsked: true,
+            }));
+            if (mergedLocalities.length > 0) setSelectedLocality(mergedLocality);
+            setBuyerStep(4);
+            const requirementsMsg = getRequirementsPrompt(mergedLocality);
+            setTranscriptHistory(prev => [...prev, { role: 'assistant', text: requirementsMsg }]);
+            if (triggerAudio) speakText(requirementsMsg, true);
+            return;
+          }
+
           setBuyerData(prev => ({
             ...prev,
             listingType: 'rent',
@@ -4441,10 +4446,30 @@ export default function App() {
             bedrooms: mergedBhk,
             isPenthouse: mergedPenthouse,
             familyPreferences: userQuery,
+            softPreferences: mergedSoftPreferences,
+            requirementsAsked: true,
           }));
           if (mergedLocalities.length > 0) setSelectedLocality(mergedLocality);
           executeBuyerFilter(mergedData);
           return;
+        }
+
+        if (currentData.requirementsAsked && mergedLocalities.length > 0 && prefsInUtterance) {
+          const requirementSearchData = {
+            ...mergedData,
+            maxBudget: mergedBudget ?? currentData.maxBudget ?? null,
+            bedrooms: mergedBhk ?? currentData.bedrooms ?? null,
+            isPenthouse: mergedPenthouse || currentData.isPenthouse || false,
+          };
+          if (requirementSearchData.maxBudget || requirementSearchData.bedrooms || requirementSearchData.isPenthouse) {
+            setBuyerData(prev => ({
+              ...prev,
+              softPreferences: mergedSoftPreferences,
+              familyPreferences: userQuery,
+            }));
+            executeBuyerFilter(requirementSearchData);
+            return;
+          }
         }
 
         const missingPrompt = getMissingRentalPrompt(mergedData);
@@ -4542,7 +4567,8 @@ export default function App() {
           maxBudget: parsedPrice || currentData.maxBudget,
           bedrooms: targetBhk,
           isPenthouse: targetPenthouse,
-          familyPreferences: currentData.familyPreferences || userQuery
+          familyPreferences: currentData.familyPreferences || userQuery,
+          softPreferences: mergeSoftPreferences(currentData.softPreferences, userQuery),
         });
         return;
       }
@@ -4655,6 +4681,12 @@ export default function App() {
 
   const getRecommendationReason = (property, history) => {
     if (!property) return "";
+    const activePrefs = buyerData.softPreferences?.length
+      ? buyerData.softPreferences
+      : extractSoftPreferences(history.map((t) => t.text).join(' '));
+    const prefReason = getPropertyPreferenceReason(property, activePrefs);
+    if (prefReason) return prefReason;
+
     const queryText = history.map(t => t.text.toLowerCase()).join(' ');
 
     const hasMall = queryText.includes('mall') || queryText.includes('shopping') || queryText.includes('store') || queryText.includes('market') || queryText.includes('shop');

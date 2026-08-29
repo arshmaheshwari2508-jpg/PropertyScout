@@ -49,7 +49,7 @@ export function hasRentalSearchCriteria({ localities = [], budget = null, bhk = 
 export function getMissingRentalPrompt(merged) {
   const loc = merged.locality || (merged.localities && merged.localities[0]);
   if (!loc && !merged.maxBudget && !merged.bedrooms) {
-    return "I'd be happy to help you find a rental apartment in Bengaluru! Which neighborhood or locality do you prefer?";
+    return "I'd be happy to help you find a rental apartment in Bengaluru! Which neighborhood or locality do you prefer? For example Cantonment Area, Indiranagar, or Koramangala.";
   }
   if (loc && !merged.maxBudget && !merged.bedrooms) {
     return `Got it, ${loc}! What is your target monthly rent, and how many bedrooms are you looking for?`;
@@ -64,4 +64,8 @@ export function getMissingRentalPrompt(merged) {
     return `Got it, ${loc}! What is your target monthly rent?`;
   }
   return null;
+}
+
+export function getRequirementsPrompt(locality = 'your chosen area') {
+  return `Before I shortlist rentals in ${locality}, do you have any specific requirements? For example hospital nearby, metro access, schools, parks, fully furnished, or pet-friendly. You can also say "no preference".`;
 }

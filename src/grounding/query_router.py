@@ -9,7 +9,9 @@ Enforces strict 4-Layer Separation of Responsibilities:
 
 import re
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+
+from src.data.locality_resolver import extract_locality_from_text, extract_localities_from_text
 
 
 class QueryIntent(str, Enum):
@@ -67,13 +69,13 @@ class IntentQueryRouter:
         if SAFETY_PATTERNS.search(query_clean):
             return QueryIntent.CRIME_SAFETY
 
+        # Check Active Property Listings & Rents intent first when listing terms appear
+        if PRICING_PATTERNS.search(query_clean):
+            return QueryIntent.LISTING_PRICING
+
         # Check Spatial Transit & Metro distance intent
         if TRANSIT_POI_PATTERNS.search(query_clean):
             return QueryIntent.LIVE_TRANSIT_POI
-
-        # Check Active Property Listings & Rents intent
-        if PRICING_PATTERNS.search(query_clean):
-            return QueryIntent.LISTING_PRICING
 
         # Check if locality or Bengaluru real estate term is present
         has_locality = IntentQueryRouter.extract_locality_mention(query_clean) is not None
@@ -108,20 +110,15 @@ class IntentQueryRouter:
 
     @staticmethod
     def extract_locality_mention(query: str) -> Optional[str]:
-        """
-        Extracts locality name from query string.
-        """
-        known_localities = [
-            "Indiranagar", "Koramangala", "HSR Layout", "Whitefield",
-            "Mahadevapura", "Jayanagar", "J P Nagar", "Malleshwaram",
-            "Hebbal", "Bellandur", "Marathahalli", "Sarjapur Road"
-        ]
-        
-        for loc in known_localities:
-            if loc.lower() in query.lower():
-                return loc
-                
-        return None
+        """Extracts locality name from query string."""
+        localities = extract_localities_from_text(query)
+        if not localities:
+            return None
+        return extract_locality_from_text(query) or localities[0]
+
+    @staticmethod
+    def extract_locality_mentions(query: str) -> List[str]:
+        return extract_localities_from_text(query)
 
     @staticmethod
     def extract_max_budget_inr(query: str) -> Optional[float]:

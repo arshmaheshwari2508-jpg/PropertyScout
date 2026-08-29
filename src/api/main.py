@@ -140,6 +140,13 @@ def health_check():
     return {"status": "healthy", "version": app.version}
 
 
+@app.get("/api/localities")
+def get_localities():
+    from src.data.locality_resolver import get_canonical_localities
+
+    return {"count": len(get_canonical_localities()), "localities": list(get_canonical_localities())}
+
+
 @app.get("/api/listings")
 def get_listings():
     manager = get_dialogue_manager()

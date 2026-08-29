@@ -16,6 +16,7 @@ from src.grounding.query_router import IntentQueryRouter, QueryIntent
 from src.agent.delta_engine import ShortlistDeltaEngine
 from src.data.listings_db import PropertyListingsDB
 from src.data.broker_booking_db import BrokerBookingDB, STANDARD_TIME_SLOTS
+from src.data.locality_resolver import extract_locality_from_text
 
 
 class PersonaRole(str, Enum):
@@ -290,45 +291,4 @@ class MultiPersonaDialogueManager:
 
     def _extract_locality_from_transcript(self, transcript: str) -> Optional[str]:
         """Extract locality, preferring explicit pivots like 'instead' / 'show me X'."""
-        text = transcript.lower()
-        locality_map = {
-            "koramangala": "Koramangala",
-            "kormangala": "Koramangala",
-            "kormangla": "Koramangala",
-            "koramngala": "Koramangala",
-            "kora": "Koramangala",
-            "indiranagar": "Indiranagar",
-            "domlur": "Domlur",
-            "hsr": "HSR Layout",
-            "whitefield": "Whitefield",
-            "bellandur": "Bellandur",
-            "mahadevapura": "Mahadevapura",
-            "pete area": "Pete Area",
-            "sadashivanagar": "Sadashivanagar",
-            "malleswaram": "Malleswaram",
-            "rajajinagar": "Rajajinagar",
-        }
-
-        matches: List[str] = []
-        for kw, loc_name in locality_map.items():
-            if kw in text:
-                matches.append(loc_name)
-
-        if not matches:
-            return None
-
-        # Prefer locality after pivot phrases
-        pivot_markers = ("instead", "switch to", "show me", "forget", "rather than", "change to", "make that")
-        best_idx = -1
-        best_loc = matches[-1]
-        for marker in pivot_markers:
-            idx = text.rfind(marker)
-            if idx >= best_idx:
-                segment = text[idx:]
-                for kw, loc_name in locality_map.items():
-                    if kw in segment:
-                        best_loc = loc_name
-                        best_idx = idx
-                        break
-
-        return best_loc
+        return extract_locality_from_text(transcript)

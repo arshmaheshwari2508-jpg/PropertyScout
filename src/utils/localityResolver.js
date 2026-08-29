@@ -1,4 +1,6 @@
 // Auto-generated canonical Bengaluru localities (76 zones)
+import { resolveListingLocality } from './listingLocality.js';
+
 export const CANONICAL_LOCALITIES = [
   "Anekal",
   "Anjanapura",
@@ -79,30 +81,44 @@ export const CANONICAL_LOCALITIES = [
 ];
 
 export const LOCALITY_ALIASES = {
-  "cantonment": "Cantonment Area",
   "cantonment area": "Cantonment Area",
-  "containment": "Cantonment Area",
+  "cantonment": "Cantonment Area",
   "containment area": "Cantonment Area",
   "hsr": "HSR Layout",
   "hsr layout": "HSR Layout",
-  "jp nagar": "J. P. Nagar",
-  "j p nagar": "J. P. Nagar",
-  "jpnagar": "J. P. Nagar",
+  "jp nagar": "JP Nagar",
+  "j p nagar": "JP Nagar",
+  "jpnagar": "JP Nagar",
   "rt nagar": "R. T. Nagar",
   "r t nagar": "R. T. Nagar",
-  "ulsoor": "Ulsoor / Halasuru",
-  "halasuru": "Ulsoor / Halasuru",
+  "ulsoor": "Ulsoor",
+  "halasuru": "Ulsoor",
   "koramangala": "Koramangala",
   "kormangala": "Koramangala",
   "indiranagar": "Indiranagar",
   "indira nagar": "Indiranagar",
   "white field": "Whitefield",
+  "whitefield": "Whitefield",
   "electronic city": "Electronic City",
   "ecity": "Electronic City",
   "marathahalli": "Marathahalli",
   "marathalli": "Marathahalli",
-  "sarjapur": "Sarjapur Road",
-  "sarjapur road": "Sarjapur Road"
+  "sarjapur": "Sarjapura",
+  "sarjapur road": "Sarjapura",
+  "domlur": "Domlur",
+  "hebbal": "Hebbal",
+  "bellandur": "Bellandur",
+  "mahadevapura": "Mahadevapura",
+  "jayanagar": "Jayanagar",
+  "whitefield": "Whitefield",
+  "btm": "BTM Layout",
+  "btm layout": "BTM Layout",
+  "banashankari": "Banashankari",
+  "yelahanka": "Yelahanka",
+  "hennur": "Hennur",
+  "hennur garden": "Hennur",
+  "kr puram": "Krishnarajapuram",
+  "krishnarajapuram": "Krishnarajapuram"
 };
 
 export function extractLocalitiesFromText(text) {
@@ -129,10 +145,33 @@ export function extractLocalitiesFromText(text) {
     }
   }
 
-  return [...matched];
+  return [...matched].map((loc) => resolveListingLocality(loc));
 }
 
 export function extractLocalityFromText(text) {
   const locs = extractLocalitiesFromText(text);
-  return locs.length > 0 ? locs[0] : null;
+  if (locs.length === 0) return null;
+  if (locs.length === 1) return locs[0];
+
+  const textLower = text.toLowerCase();
+  const pivotMarkers = ['instead', 'switch to', 'show me', 'forget', 'rather than', 'change to', 'make that'];
+  let bestIdx = -1;
+  let bestLoc = locs[locs.length - 1];
+
+  for (const marker of pivotMarkers) {
+    const idx = textLower.lastIndexOf(marker);
+    if (idx >= bestIdx) {
+      const segment = textLower.slice(idx);
+      for (const locality of locs) {
+        const locLower = locality.toLowerCase();
+        const parts = locLower.split('/').map((p) => p.trim()).filter(Boolean);
+        if (segment.includes(locLower) || parts.some((part) => segment.includes(part))) {
+          bestLoc = locality;
+          bestIdx = idx;
+          break;
+        }
+      }
+    }
+  }
+  return bestLoc;
 }

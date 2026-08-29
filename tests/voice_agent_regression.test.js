@@ -1,0 +1,156 @@
+/**
+ * Regression tests for voice agent locality, preferences, booking, and broker availability.
+ * Run: node --test tests/voice_agent_regression.test.js
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { extractLocalitiesFromText, extractLocalityFromText } from '../src/utils/localityResolver.js';
+import { propertyMatchesLocality, resolveListingLocality } from '../src/utils/listingLocality.js';
+import {
+  extractSoftPreferences,
+  hasNoPreference,
+  mergeSoftPreferences,
+} from '../src/utils/softPreferences.js';
+import { hasPreferenceInput } from '../src/utils/intentDetection.js';
+import {
+  findShortlistPropertyFromQuery,
+  isSiteVisitBookingIntent,
+  canTriggerSiteVisitBooking,
+  filterPropertiesByLocalities,
+  brokerSlotUnavailable,
+} from '../src/utils/voiceAgentLogic.js';
+
+const MOCK_SHORTLIST = [
+  { society_name: 'TVS Emerald Court Cantonment Area', locality: 'Cantonment Area', listing_type: 'rent', rent_inr: 45000, bedrooms: 2 },
+  { society_name: 'Prestige Lakeside Habitat Whitefield', locality: 'Whitefield', listing_type: 'rent', rent_inr: 55000, bedrooms: 3 },
+  { society_name: 'Brigade Gateway Rajajinagar', locality: 'Rajajinagar', listing_type: 'rent', rent_inr: 38000, bedrooms: 2 },
+];
+
+const MOCK_LISTINGS = [
+  { society_name: 'Flat A', locality: 'JP Nagar', listing_type: 'rent' },
+  { society_name: 'Flat B', locality: 'Koramangala', listing_type: 'rent' },
+  { society_name: 'Flat C', locality: 'Indiranagar', listing_type: 'rent' },
+  { society_name: 'Flat D', locality: 'Cantonment Area', listing_type: 'rent' },
+  { society_name: 'Flat E', locality: 'Sarjapura', listing_type: 'rent' },
+];
+
+// BUG 046 — Bengaluru neighborhood handling
+test('extractLocalitiesFromText recognizes major Bengaluru neighborhoods', () => {
+  assert.ok(extractLocalitiesFromText('I want to rent in Indiranagar').includes('Indiranagar'));
+  assert.ok(extractLocalitiesFromText('Show me Koramangala flats').includes('Koramangala'));
+  assert.ok(extractLocalitiesFromText('Looking in Whitefield under 50k').includes('Whitefield'));
+  assert.ok(extractLocalitiesFromText('JP Nagar 2BHK').includes('JP Nagar'));
+  assert.ok(extractLocalitiesFromText('HSR Layout rental').includes('HSR Layout'));
+});
+
+test('STT "come" does not map to Cantonment Area', () => {
+  const locs = extractLocalitiesFromText('come');
+  assert.equal(locs.includes('Cantonment Area'), false);
+});
+
+test('STT "containment area" maps to Cantonment Area', () => {
+  const locs = extractLocalitiesFromText('containment area');
+  assert.ok(locs.includes('Cantonment Area'));
+});
+
+test('resolveListingLocality maps aliases to listing.json names', () => {
+  assert.equal(resolveListingLocality('J. P. Nagar'), 'JP Nagar');
+  assert.equal(resolveListingLocality('Sarjapur Road'), 'Sarjapura');
+  assert.equal(resolveListingLocality('Ulsoor / Halasuru'), 'Ulsoor');
+});
+
+test('propertyMatchesLocality matches listing locality strings', () => {
+  const jpFlat = { locality: 'JP Nagar' };
+  assert.equal(propertyMatchesLocality(jpFlat, 'J. P. Nagar'), true);
+  assert.equal(propertyMatchesLocality(jpFlat, 'Koramangala'), false);
+  assert.equal(propertyMatchesLocality({ locality: 'Sarjapura' }, 'Sarjapur Road'), true);
+});
+
+test('filterPropertiesByLocalities strictly filters without silent skip', () => {
+  const koramangalaOnly = filterPropertiesByLocalities(
+    MOCK_LISTINGS,
+    ['Koramangala'],
+    propertyMatchesLocality
+  );
+  assert.equal(koramangalaOnly.length, 1);
+  assert.equal(koramangalaOnly[0].locality, 'Koramangala');
+
+  const indiranagarOnly = filterPropertiesByLocalities(
+    MOCK_LISTINGS,
+    ['Indiranagar'],
+    propertyMatchesLocality
+  );
+  assert.equal(indiranagarOnly.length, 1);
+  assert.equal(indiranagarOnly[0].locality, 'Indiranagar');
+});
+
+test('extractLocalityFromText picks Koramangala over Cantonment when both mentioned with pivot', () => {
+  const loc = extractLocalityFromText('Show me Koramangala instead of Cantonment');
+  assert.equal(loc, 'Koramangala');
+});
+
+// BUG 047 — Voice preference recognition
+test('extractSoftPreferences captures hospital, metro, and furnished requirements', () => {
+  const hospital = extractSoftPreferences('I need a hospital nearby');
+  assert.ok(hospital.some((p) => p.id === 'hospital'));
+
+  const metro = extractSoftPreferences('metro access is important');
+  assert.ok(metro.some((p) => p.id === 'metro'));
+
+  const furnished = extractSoftPreferences('fully furnished apartment');
+  assert.ok(furnished.some((p) => p.id === 'furnished'));
+});
+
+test('hasNoPreference treats STT misheard "come" as no preference', () => {
+  assert.equal(hasNoPreference('come'), true);
+  assert.equal(hasNoPreference('no preference'), true);
+  assert.equal(hasNoPreference('hospital nearby'), false);
+});
+
+test('hasPreferenceInput detects real preferences vs STT no-preference', () => {
+  assert.equal(hasPreferenceInput('hospital and metro nearby'), true);
+  assert.equal(hasPreferenceInput('come'), true);
+  assert.equal(hasPreferenceInput('hello there'), false);
+});
+
+test('mergeSoftPreferences accumulates requirements across turns', () => {
+  const first = mergeSoftPreferences([], 'hospital nearby');
+  const merged = mergeSoftPreferences(first, 'also need metro access');
+  assert.equal(merged.length, 2);
+  assert.ok(merged.some((p) => p.id === 'hospital'));
+  assert.ok(merged.some((p) => p.id === 'metro'));
+});
+
+// BUG 048 — Voice site visit booking
+test('findShortlistPropertyFromQuery matches TVS Emerald from voice utterance', () => {
+  const match = findShortlistPropertyFromQuery('TVS Emerald, book a site visit', MOCK_SHORTLIST);
+  assert.ok(match);
+  assert.match(match.society_name, /TVS Emerald/i);
+});
+
+test('isSiteVisitBookingIntent recognizes book site visit with property name', () => {
+  const property = MOCK_SHORTLIST[0];
+  assert.equal(isSiteVisitBookingIntent('TVS Emerald, book a site visit', property), true);
+  assert.equal(isSiteVisitBookingIntent('book TVS Emerald', property), true);
+  assert.equal(isSiteVisitBookingIntent('book site visit', null), true);
+});
+
+test('canTriggerSiteVisitBooking works without hasSearched gate when shortlist exists', () => {
+  const property = findShortlistPropertyFromQuery('TVS Emerald book visit', MOCK_SHORTLIST);
+  assert.equal(
+    canTriggerSiteVisitBooking({
+      bookingIntent: isSiteVisitBookingIntent('TVS Emerald book visit', property),
+      matchedProperty: property,
+      shortlistLength: MOCK_SHORTLIST.length,
+    }),
+    true
+  );
+});
+
+// BUG 049 — Manual booking broker error (pessimistic availability fallback)
+test('brokerSlotUnavailable marks slots unavailable on API failure', () => {
+  const status = brokerSlotUnavailable();
+  assert.equal(status.is_available, false);
+  assert.equal(status.error, true);
+  assert.equal(status.available_count, 0);
+});

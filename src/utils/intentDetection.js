@@ -3,6 +3,8 @@
  * Mirrors backend rules in src/grounding/query_router.py.
  */
 
+import { extractSoftPreferences, hasNoPreference } from './softPreferences.js';
+
 export const PURCHASE_DECLINE_MSG =
   "We can't help you with home purchase queries. Our platform specializes exclusively in verified rental property discovery in Bengaluru. If you'd like to rent instead, tell me your preferred neighborhood and budget.";
 
@@ -49,7 +51,7 @@ export function hasRentalSearchCriteria({ localities = [], budget = null, bhk = 
 export function getMissingRentalPrompt(merged) {
   const loc = merged.locality || (merged.localities && merged.localities[0]);
   if (!loc && !merged.maxBudget && !merged.bedrooms) {
-    return "I'd be happy to help you find a rental apartment in Bengaluru! Which neighborhood or locality do you prefer? For example Cantonment Area, Indiranagar, or Koramangala.";
+    return "I'd be happy to help you find a rental apartment in Bengaluru! Which neighborhood or locality do you prefer? For example Koramangala, Indiranagar, or Whitefield.";
   }
   if (loc && !merged.maxBudget && !merged.bedrooms) {
     return `Got it, ${loc}! What is your target monthly rent, and how many bedrooms are you looking for?`;
@@ -68,4 +70,9 @@ export function getMissingRentalPrompt(merged) {
 
 export function getRequirementsPrompt(locality = 'your chosen area') {
   return `Before I shortlist rentals in ${locality}, do you have any specific requirements? For example hospital nearby, metro access, schools, parks, fully furnished, or pet-friendly. You can also say "no preference".`;
+}
+
+export function hasPreferenceInput(userQuery) {
+  if (!userQuery) return false;
+  return extractSoftPreferences(userQuery).length > 0 || hasNoPreference(userQuery);
 }

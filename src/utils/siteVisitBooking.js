@@ -1,4 +1,5 @@
-import { apiUrl } from './apiBase';
+import { apiUrl } from './apiBase.js';
+import { brokerSlotUnavailable } from './voiceAgentLogic.js';
 
 export const SITE_VISIT_TIME_SLOTS = [
   '10:00 AM - 11:00 AM',
@@ -20,7 +21,7 @@ export async function fetchBrokerSlotAvailability(visitDate) {
         available_count: data.available_count || 0
       };
     } catch {
-      statusMap[slot] = { is_available: true, available_count: 8 };
+      statusMap[slot] = brokerSlotUnavailable();
     }
   }
   return statusMap;

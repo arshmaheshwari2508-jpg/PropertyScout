@@ -35,15 +35,22 @@ export default function BookingModal({ isOpen, onClose, property }) {
 
   const fetchSlotAvailability = async (targetDate) => {
     setIsLoadingSlots(true);
+    setBookingError(null);
     const statusMap = await fetchBrokerSlotAvailability(targetDate);
     setSlotStatusMap(statusMap);
-    setIsLoadingSlots(false);
 
-    const currentStatus = statusMap[selectedSlot];
-    if (currentStatus && !currentStatus.is_available) {
-      const firstFree = availableSlots.find(s => statusMap[s]?.is_available);
-      if (firstFree) setSelectedSlot(firstFree);
+    const apiErrors = Object.values(statusMap).filter((slot) => slot?.error);
+    if (apiErrors.length === SITE_VISIT_TIME_SLOTS.length) {
+      setBookingError('Could not reach the booking server. Check your connection or try again in a moment.');
     }
+
+    const firstFree = availableSlots.find((s) => statusMap[s]?.is_available);
+    if (firstFree) {
+      setSelectedSlot(firstFree);
+    } else if (availableSlots.length > 0) {
+      setSelectedSlot(availableSlots[0]);
+    }
+    setIsLoadingSlots(false);
   };
 
   const handleSubmit = async (e) => {
@@ -73,7 +80,12 @@ export default function BookingModal({ isOpen, onClose, property }) {
       });
 
       if (!data.success) {
-        setBookingError(data.message || 'All 8 property brokers are busy for this slot.');
+        const isBrokerBusy = data.error === 'ALL_BROKERS_BUSY';
+        setBookingError(
+          isBrokerBusy
+            ? (data.message || 'All 8 property brokers are busy for this slot. Please choose another time or date.')
+            : (data.message || 'Booking could not be completed. Please try again.')
+        );
         setIsSubmitting(false);
         return;
       }
@@ -82,7 +94,13 @@ export default function BookingModal({ isOpen, onClose, property }) {
       setIsSubmitted(true);
     } catch (err) {
       console.warn('Site visit booking failed:', err);
-      setBookingError(err.message || 'Could not complete booking. Please check your connection and try again.');
+      const msg = err.message || '';
+      const isNetwork = /failed|fetch|network|connection|502|503|504/i.test(msg);
+      setBookingError(
+        isNetwork
+          ? 'Could not reach the booking server. Confirm VITE_API_BASE_URL is set and the Railway backend is running.'
+          : (msg || 'Could not complete booking. Please try again.')
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -163,7 +181,7 @@ export default function BookingModal({ isOpen, onClose, property }) {
               }}>
                 <AlertCircle size={20} style={{ shrink: 0 }} />
                 <div>
-                  <strong>Broker Conflict Notice:</strong>
+                  <strong>Booking Error:</strong>
                   <p style={{ margin: '2px 0 0 0' }}>{bookingError}</p>
                 </div>
               </div>

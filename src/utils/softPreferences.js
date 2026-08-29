@@ -63,7 +63,7 @@ const PREFERENCE_RULES = [
   },
 ];
 
-const NO_PREFERENCE_PATTERN = /\b(no preference|no specific|nothing specific|none|not really|doesn?t matter|skip|any is fine|no requirements?)\b/i;
+const NO_PREFERENCE_PATTERN = /\b(no preference|no specific|nothing specific|none|not really|doesn?t matter|skip|any is fine|no requirements?|no prefer|come|comm|calm)\b/i;
 
 export function hasNoPreference(text) {
   return NO_PREFERENCE_PATTERN.test(text || '');

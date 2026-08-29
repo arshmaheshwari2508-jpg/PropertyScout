@@ -15,17 +15,16 @@ _LISTINGS_JSON = os.path.join(_ROOT, "data/listings.json")
 LOCALITY_ALIASES = {
     "cantonment": "Cantonment Area",
     "cantonment area": "Cantonment Area",
-    "containment": "Cantonment Area",
     "containment area": "Cantonment Area",
     "hsr": "HSR Layout",
     "hsr layout": "HSR Layout",
-    "jp nagar": "J. P. Nagar",
-    "j p nagar": "J. P. Nagar",
-    "jpnagar": "J. P. Nagar",
+    "jp nagar": "JP Nagar",
+    "j p nagar": "JP Nagar",
+    "jpnagar": "JP Nagar",
     "rt nagar": "R. T. Nagar",
     "r t nagar": "R. T. Nagar",
-    "ulsoor": "Ulsoor / Halasuru",
-    "halasuru": "Ulsoor / Halasuru",
+    "ulsoor": "Ulsoor",
+    "halasuru": "Ulsoor",
     "koramangala": "Koramangala",
     "kormangala": "Koramangala",
     "indiranagar": "Indiranagar",
@@ -35,8 +34,8 @@ LOCALITY_ALIASES = {
     "ecity": "Electronic City",
     "marathahalli": "Marathahalli",
     "marathalli": "Marathahalli",
-    "sarjapur": "Sarjapur Road",
-    "sarjapur road": "Sarjapur Road",
+    "sarjapur": "Sarjapura",
+    "sarjapur road": "Sarjapura",
 }
 
 

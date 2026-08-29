@@ -31,6 +31,7 @@ import {
   hasRentalSearchCriteria,
   getMissingRentalPrompt,
   getRequirementsPrompt,
+  hasPreferenceInput,
   PURCHASE_DECLINE_MSG
 } from './utils/intentDetection';
 import { extractLocalitiesFromText, extractLocalityFromText } from './utils/localityResolver';
@@ -42,6 +43,12 @@ import {
   buildShortlistVerdict,
   getPropertyPreferenceReason
 } from './utils/softPreferences';
+import {
+  findShortlistPropertyFromQuery,
+  isSiteVisitBookingIntent,
+  canTriggerSiteVisitBooking
+} from './utils/voiceAgentLogic';
+import { propertyMatchesLocality, resolveListingLocality } from './utils/listingLocality';
 import { apiUrl } from './utils/apiBase';
 
 // Word-to-number dictionary for English/Hindi spoken numbers
@@ -197,68 +204,6 @@ const normalizeListings = (list) => {
 };
 
 const PROPERTY_BROWSE_VOICE_PROMPT = 'Have a look at the properties on your screen and tell me which one you would like to book a site visit for.';
-
-const normalizeMatchText = (text) =>
-  (text || '')
-    .toLowerCase()
-    .replace(/emarald/g, 'emerald')
-    .replace(/emerlad/g, 'emerald')
-    .replace(/containment/g, 'cantonment')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const stripBookingWords = (text) =>
-  normalizeMatchText(text)
-    .replace(/\b(book|schedule|site visit|visit|for|the|a|please|want|this|that|property|flat|apartment)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const findShortlistPropertyFromQuery = (query, list) => {
-  if (!query || !list?.length) return null;
-  const q = normalizeMatchText(query);
-  const stripped = stripBookingWords(query);
-  const candidates = list.filter((p) => p?.society_name);
-
-  for (const p of candidates) {
-    const name = normalizeMatchText(p.society_name);
-    if (q.includes(name)) return p;
-    if (stripped && name.includes(stripped)) return p;
-  }
-
-  let best = null;
-  let bestScore = 0;
-  for (const p of candidates) {
-    const name = normalizeMatchText(p.society_name);
-    const tokens = name.split(/[\s,&\-()]+/).filter((t) => t.length >= 3);
-    let score = 0;
-    for (const t of tokens) {
-      if (q.includes(t) || stripped.includes(t)) score += t.length;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      best = p;
-    }
-  }
-  return bestScore >= 4 ? best : null;
-};
-
-const isSiteVisitBookingIntent = (query, matchedProperty) => {
-  const q = (query || '').toLowerCase();
-  const mentionsProperty = !!matchedProperty;
-  const mentionsBooking = q.includes('book') || q.includes('schedule') || q.includes('visit');
-  const showsInterest = q.includes('like') || q.includes('love') || q.includes('interested') || q.includes('want this') || q.includes('pick') || q.includes('choose');
-  return (
-    q.includes('book site visit') ||
-    q.includes('schedule visit') ||
-    q.includes('book visit') ||
-    q.includes('physical visit') ||
-    q.includes('book appointment') ||
-    (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour'))) ||
-    ((q.includes('book') || q.includes('schedule')) && mentionsProperty) ||
-    (showsInterest && mentionsProperty)
-  );
-};
 
 const formatVisitDateForSpeech = (dateStr) => {
   if (!dateStr) return dateStr;
@@ -4110,19 +4055,19 @@ export default function App() {
     // Determine target localities array
     let targetLocalities = [];
     if (data.localities && Array.isArray(data.localities) && data.localities.length > 0) {
-      targetLocalities = data.localities;
+      targetLocalities = data.localities.map(resolveListingLocality);
     } else if (data.locality && data.locality !== 'All Bengaluru') {
-      targetLocalities = [data.locality];
+      targetLocalities = data.locality.split(' & ').map(resolveListingLocality);
     } else if (selectedLocality !== 'All Bengaluru' && selectedLocality !== 'Koramangala & Indiranagar') {
-      targetLocalities = [selectedLocality];
+      targetLocalities = [resolveListingLocality(selectedLocality)];
     }
 
-    // 1. Locality Filter (Multi-Locality Matching)
+    // 1. Locality Filter (Multi-Locality Matching — strict, no silent skip)
     if (targetLocalities.length > 0 && !targetLocalities.includes('All Bengaluru')) {
-      const locMatches = filtered.filter(item => 
-        targetLocalities.some(loc => item.locality.toLowerCase().includes(loc.toLowerCase()))
+      const locMatches = filtered.filter((item) =>
+        targetLocalities.some((loc) => propertyMatchesLocality(item, loc))
       );
-      if (locMatches.length > 0) filtered = locMatches;
+      filtered = locMatches;
     }
 
     const localityDisplay = targetLocalities.length > 1 
@@ -4387,16 +4332,19 @@ export default function App() {
       const activeShortlist = shortlistRef.current || shortlist;
       const matchedProperty = findShortlistPropertyFromQuery(userQuery, activeShortlist);
       const bookingIntent = isSiteVisitBookingIntent(userQuery, matchedProperty);
-      const browseActive = hasSearchedRef.current || hasSearched || currentStep >= 5;
 
-      if (browseActive && activeShortlist.length > 0 && bookingIntent) {
-        const targetProp = matchedProperty || activeShortlist[0];
-        startVoiceSiteVisitBooking(targetProp, triggerAudio);
+      if (canTriggerSiteVisitBooking({
+        bookingIntent,
+        matchedProperty,
+        shortlistLength: activeShortlist.length,
+      })) {
+        startVoiceSiteVisitBooking(matchedProperty || activeShortlist[0], triggerAudio);
         return;
       }
 
       const isPropertyInterest = q.includes('like') || q.includes('love') || q.includes('interested') || q.includes('want this') || q.includes('want that') || q.includes('this one') || q.includes('that one') || q.includes('go with') || q.includes('pick this') || q.includes('choose');
       const isSimpleYes = (q.trim() === 'yes' || q.includes('yes please') || q.includes('sure') || q.includes('go ahead') || q.includes('sounds good'));
+      const browseActive = hasSearchedRef.current || hasSearched || currentStep >= 5;
       const readyToBook = browseActive && activeShortlist.length > 0 && (
         (isSimpleYes && matchedProperty) ||
         (isPropertyInterest && matchedProperty)
@@ -4404,6 +4352,29 @@ export default function App() {
 
       if (readyToBook) {
         startVoiceSiteVisitBooking(matchedProperty, triggerAudio);
+        return;
+      }
+
+      // Step 4: user answered requirements question — store prefs and search
+      if ((currentStep === 4 || currentData.requirementsAsked) && hasPreferenceInput(userQuery) && !bookingIntent) {
+        const mergedSoftPreferences = mergeSoftPreferences(currentData.softPreferences, userQuery);
+        const searchPayload = {
+          localities: currentData.localities?.length ? currentData.localities : (currentData.locality ? [currentData.locality] : []),
+          locality: currentData.locality,
+          listingType: 'rent',
+          maxBudget: currentData.maxBudget,
+          bedrooms: currentData.bedrooms,
+          isPenthouse: currentData.isPenthouse || false,
+          familyPreferences: userQuery,
+          softPreferences: mergedSoftPreferences,
+        };
+        setBuyerData((prev) => ({
+          ...prev,
+          softPreferences: mergedSoftPreferences,
+          familyPreferences: userQuery,
+          requirementsAsked: true,
+        }));
+        executeBuyerFilter(searchPayload);
         return;
       }
 
@@ -4434,7 +4405,7 @@ export default function App() {
         const mergedPenthouse = isPenthouse || currentData.isPenthouse || false;
 
         const mergedSoftPreferences = mergeSoftPreferences(currentData.softPreferences, userQuery);
-        const prefsInUtterance = extractSoftPreferences(userQuery).length > 0 || hasNoPreference(userQuery);
+        const prefsInUtterance = hasPreferenceInput(userQuery);
 
         const mergedData = {
           localities: mergedLocalities,

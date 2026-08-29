@@ -6,6 +6,67 @@
 
 ## 📌 Active & Resolved Bug Audit Trail
 
+### 🔴 BUG 049: Manual Site Visit Booking Shows Misleading "Broker Error"
+- **Reported Issue:** Manual booking via **Schedule Visit** modal failed with a generic "Broker Conflict Notice" even when the real problem was network/API failure or validation error.
+- **Root Cause:**
+  1. `fetchBrokerSlotAvailability()` in `siteVisitBooking.js` optimistically marked **all slots as available** when the broker API call failed (`catch` → `{ is_available: true }`).
+  2. User selected a slot that appeared free; submit then failed with confusing broker messaging.
+  3. `BookingModal.jsx` labeled every error "Broker Conflict Notice" regardless of cause.
+- **Fix & Guardrail Rule:**
+  1. On broker availability API failure, return `{ is_available: false, error: true }` — never fake availability.
+  2. Show distinct error copy for network failures vs broker-busy (`ALL_BROKERS_BUSY`) vs validation.
+  3. Auto-select first genuinely available slot after availability fetch.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → `brokerSlotUnavailable marks slots unavailable on API failure`
+- **Verification:** Open Schedule Visit → if backend unreachable, show connection error (not broker conflict). When backend healthy, booking completes and email sends.
+
+---
+
+### 🔴 BUG 048: Voice "TVS Emerald, Book a Site Visit" Loops Instead of Opening Booking
+- **Reported Issue:** User said *"TVS Emerald, book a site visit"* but agent repeatedly asked which property to choose instead of opening the booking flow.
+- **Root Cause:**
+  1. `hasSearched` gate blocked booking even when property was visible on screen.
+  2. `findShortlistPropertyFromQuery` and booking intent checks lived inline in `App.jsx` without token-based fuzzy matching for partial names like "TVS Emerald".
+  3. `"book TVS Emerald"` without the word "visit" was not always recognized as booking intent.
+- **Fix & Guardrail Rule:**
+  1. Extract booking helpers to `src/utils/voiceAgentLogic.js` with `findShortlistPropertyFromQuery`, `isSiteVisitBookingIntent`, `canTriggerSiteVisitBooking`.
+  2. Booking MUST trigger when shortlist has items + booking intent + matched property — no `hasSearched` requirement.
+  3. Voice booking opens `BookingModal` (same as Schedule Visit button) via `setBookingProperty()`.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → TVS Emerald match, booking intent, `canTriggerSiteVisitBooking`
+- **Verification:** After property shortlist shown, say *"TVS Emerald, book a site visit"* → booking modal opens for matched property.
+
+---
+
+### 🔴 BUG 047: Voice Preference Recognition Ignores User Input / STT "come" Hallucination
+- **Reported Issue:** Agent ignored requirements like hospital/metro/furnished; sometimes responded as if user said "come" or used default/hallucinated values.
+- **Root Cause:**
+  1. Step 4 (requirements question) was a dead zone — no handler when user answered with preferences or STT-misheard "no preference" as "come".
+  2. `mergeSoftPreferences()` only ran inside rental search block requiring `isRentalIntent || hasSearchCriteria`.
+  3. Single-word alias `"containment"` falsely mapped STT noise to Cantonment Area.
+- **Fix & Guardrail Rule:**
+  1. Add Step 4 handler: when `hasPreferenceInput(userQuery)`, merge prefs and call `executeBuyerFilter()`.
+  2. Extend `NO_PREFERENCE_PATTERN` with STT variants: `come`, `comm`, `calm`.
+  3. Remove `"containment"` single-word alias; keep `"containment area"` only.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → preference extraction, `hasNoPreference('come')`, `mergeSoftPreferences`
+- **Verification:** At requirements step, say *"hospital nearby and metro access"* → prefs stored, shortlist scored with reasons. Say *"come"* (STT for no preference) → search proceeds without false locality.
+
+---
+
+### 🔴 BUG 046: Voice Agent Only Suggested Cantonment Area, Ignored Other Bengaluru Localities
+- **Reported Issue:** Agent only suggested/accepted Cantonment Area; Indiranagar, Koramangala, Whitefield, etc. were ignored or lost after voice input.
+- **Root Cause:**
+  1. Alias → listing mismatch (`J. P. Nagar` vs `JP Nagar`, `Sarjapur Road` vs `Sarjapura`, `Ulsoor / Halasuru` vs `Ulsoor`).
+  2. Locality filter silently skipped when 0 alias matches → fallback showed Cantonment-first listings from `initialListings`.
+  3. Frontend and backend locality resolvers diverged on canonical names.
+- **Fix & Guardrail Rule:**
+  1. Add `src/utils/listingLocality.js` with `resolveListingLocality()` and `propertyMatchesLocality()` mapping voice names to exact `listings.json` strings.
+  2. `executeBuyerFilter()` uses strict locality filter — empty match shows "no exact matches" instead of silently showing unrelated areas.
+  3. Sync aliases in `localityResolver.js`, `listingLocality.js`, and `src/data/locality_resolver.py`.
+  4. Example localities in prompts: Koramangala, Indiranagar, Whitefield (not only Cantonment).
+- **Regression Tests:** `tests/voice_agent_regression.test.js`, `tests/test_locality_resolver.py`
+- **Verification:** Say *"Indiranagar 2BHK under 50000"* → only Indiranagar listings. Repeat for Koramangala, JP Nagar, HSR Layout.
+
+---
+
 ### 🔴 BUG 045: Voice Auto-Started on Entry & Mic Stayed Open After Property Suggestions
 - **Reported Issue:** Conversation started automatically when entering command view; after property suggestions the mic stayed open and interrupted exploration. Expected flow: **Speak → Suggestions → Pause → Explore → Speak → Site Visit**.
 - **Root Cause:**

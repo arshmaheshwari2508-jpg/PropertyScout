@@ -189,6 +189,18 @@ def send_site_visit_email(
     smtp_pass = os.getenv("SMTP_PASSWORD", "")
     sender_email = os.getenv("SENDER_EMAIL", smtp_user or "support@scout.ai")
 
+    # Railway blocks outbound SMTP; Gmail API via GOOGLE_TOKEN_JSON is required there.
+    if os.getenv("RAILWAY_ENVIRONMENT") and not os.getenv("GOOGLE_TOKEN_JSON"):
+        return {
+            "success": True,
+            "delivered": False,
+            "mode": "railway_gmail_api_required",
+            "message": (
+                "Railway blocks SMTP. Add GOOGLE_TOKEN_JSON in Railway Variables "
+                "(paste full token.json contents) and redeploy."
+            ),
+        }
+
     if smtp_user and smtp_pass:
         msg = _build_email_message(subject, sender_email, user_email, html_content)
         _, smtp_res = _dispatch_via_smtp(

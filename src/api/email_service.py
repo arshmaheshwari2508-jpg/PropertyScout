@@ -1,8 +1,95 @@
 import os
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
+
+
+def _build_email_message(
+    subject: str,
+    sender_email: str,
+    user_email: str,
+    html_content: str,
+) -> MIMEMultipart:
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = user_email
+    msg.attach(MIMEText(html_content, "html"))
+    return msg
+
+
+def _send_smtp_message(
+    smtp_host: str,
+    smtp_port: int,
+    smtp_user: str,
+    smtp_pass: str,
+    sender_email: str,
+    user_email: str,
+    msg: MIMEMultipart,
+    timeout: int,
+) -> None:
+    if smtp_port == 465:
+        with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=timeout) as server:
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(sender_email, user_email, msg.as_string())
+        return
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=timeout) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(sender_email, user_email, msg.as_string())
+
+
+def _dispatch_via_smtp(
+    smtp_host: str,
+    smtp_port: int,
+    smtp_user: str,
+    smtp_pass: str,
+    sender_email: str,
+    user_email: str,
+    msg: MIMEMultipart,
+) -> Tuple[bool, Dict[str, Any]]:
+    timeout = int(os.getenv("SMTP_TIMEOUT", "15"))
+    ports_to_try = []
+    for port in (smtp_port, 465, 587):
+        if port not in ports_to_try:
+            ports_to_try.append(port)
+
+    last_error = None
+    for port in ports_to_try:
+        try:
+            _send_smtp_message(
+                smtp_host=smtp_host,
+                smtp_port=port,
+                smtp_user=smtp_user,
+                smtp_pass=smtp_pass,
+                sender_email=sender_email,
+                user_email=user_email,
+                msg=msg,
+                timeout=timeout,
+            )
+            return True, {
+                "success": True,
+                "delivered": True,
+                "mode": "smtp_ssl" if port == 465 else "smtp_live",
+                "smtp_port": port,
+                "message": f"Realtime email dispatched via SMTP to {user_email}",
+            }
+        except (TimeoutError, socket.timeout, OSError, smtplib.SMTPException) as exc:
+            last_error = exc
+            continue
+
+    return False, {
+        "success": False,
+        "delivered": False,
+        "error": str(last_error) if last_error else "Unknown SMTP error",
+        "message": "SMTP dispatch attempt failed. Check SMTP credentials and Railway outbound email access.",
+    }
+
 
 def send_site_visit_email(
     user_name: str,
@@ -103,21 +190,17 @@ def send_site_visit_email(
     sender_email = os.getenv("SENDER_EMAIL", smtp_user or "support@scout.ai")
 
     if smtp_user and smtp_pass:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = sender_email
-            msg["To"] = user_email
-            msg.attach(MIMEText(html_content, "html"))
-
-            with smtplib.SMTP(smtp_host, smtp_port) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(sender_email, user_email, msg.as_string())
-
-            return {"success": True, "delivered": True, "mode": "smtp_live", "message": f"Realtime email dispatched via SMTP to {user_email}"}
-        except Exception as e:
-            return {"success": False, "delivered": False, "error": str(e), "message": "SMTP dispatch attempt failed. Please check credentials."}
+        msg = _build_email_message(subject, sender_email, user_email, html_content)
+        _, smtp_res = _dispatch_via_smtp(
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_user=smtp_user,
+            smtp_pass=smtp_pass,
+            sender_email=sender_email,
+            user_email=user_email,
+            msg=msg,
+        )
+        return smtp_res
 
     # 3. If unauthenticated, return detailed payload instructions
     return {

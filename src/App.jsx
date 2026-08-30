@@ -34,7 +34,12 @@ import {
   hasPreferenceInput,
   PURCHASE_DECLINE_MSG,
   OUT_OF_SCOPE_DECLINE_MSG,
+  OUT_OF_SCOPE_CONTINUE_PROMPT,
   isOutOfScopeQuery,
+  getOutOfScopeResponse,
+  isAffirmativeResponse,
+  isNegativeResponse,
+  getScopeContinueResumePrompt,
 } from './utils/intentDetection';
 import {
   extractLocalitiesFromText,
@@ -3354,6 +3359,10 @@ export default function App() {
   const pendingLocalityConfirmRef = useRef(pendingLocalityConfirm);
   pendingLocalityConfirmRef.current = pendingLocalityConfirm;
 
+  const [awaitingScopeContinue, setAwaitingScopeContinue] = useState(false);
+  const awaitingScopeContinueRef = useRef(awaitingScopeContinue);
+  awaitingScopeContinueRef.current = awaitingScopeContinue;
+
   const shortlistRef = useRef(shortlist);
   shortlistRef.current = shortlist;
 
@@ -4318,6 +4327,7 @@ export default function App() {
     setBookingProperty(null);
     setBookingCompleted(false);
     setPendingLocalityConfirm(null);
+    setAwaitingScopeContinue(false);
     setTranscriptHistory([]);
   };
 
@@ -4417,9 +4427,33 @@ export default function App() {
         hasPreferenceInput(userQuery) ||
         isSiteVisitBookingIntent(userQuery, findShortlistPropertyFromQuery(userQuery, shortlistRef.current || shortlist));
 
+      if (awaitingScopeContinueRef.current) {
+        if (isAffirmativeResponse(userQuery)) {
+          setAwaitingScopeContinue(false);
+          const resumeMsg = getScopeContinueResumePrompt(currentData);
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: resumeMsg }]);
+          if (triggerAudio) speakText(resumeMsg, true);
+          return;
+        }
+        if (isNegativeResponse(userQuery)) {
+          setAwaitingScopeContinue(false);
+          handleResetSession();
+          const byeMsg = 'Session cleared. Tap Speak when you want to search rentals.';
+          setTranscriptHistory([{ role: 'assistant', text: byeMsg }]);
+          if (triggerAudio) speakText(byeMsg, false);
+          return;
+        }
+        const retryMsg = OUT_OF_SCOPE_CONTINUE_PROMPT;
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: retryMsg }]);
+        if (triggerAudio) speakText(retryMsg, true);
+        return;
+      }
+
       if (isOutOfScopeQuery(userQuery, { hasRentalContext })) {
-        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: OUT_OF_SCOPE_DECLINE_MSG }]);
-        if (triggerAudio) speakText(OUT_OF_SCOPE_DECLINE_MSG, true);
+        setAwaitingScopeContinue(true);
+        const scopeMsg = getOutOfScopeResponse();
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: scopeMsg }]);
+        if (triggerAudio) speakText(scopeMsg, true);
         return;
       }
 

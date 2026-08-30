@@ -7,14 +7,15 @@
 ## 📌 Active & Resolved Bug Audit Trail
 
 ### 🔴 BUG 054: General Knowledge Questions Trigger Rental Interview
-- **Reported Issue:** User asked *"Who is the prime minister of India?"* but agent replied with *"Which neighborhood would you prefer?"* instead of declining politely.
-- **Root Cause:** Frontend `handleProcessQuery` had purchase-intent guard only. Unrecognized utterances fell through to Step 1 locality prompt with no out-of-scope intercept (backend `query_router.py` already had `OFF_TOPIC_PATTERNS` but frontend voice flow did not use it).
+- **Reported Issue:** User asked *"Who is the prime minister of India?"* but agent gave a long reply and jumped straight to locality/budget questions.
+- **Root Cause:** Frontend had no out-of-scope intercept; after decline was added, copy was too long and flow skipped user consent before resuming interview.
 - **Fix & Guardrail Rule:**
-  1. Add `isOutOfScopeQuery()` + `OUT_OF_SCOPE_DECLINE_MSG` in `intentDetection.js` (mirrors backend off-topic patterns).
-  2. Before rental interview steps, if off-topic and no rental context → polite decline; do NOT advance `buyerStep` or ask locality.
-  3. Rental intent, search slots (locality/budget/BHK), preferences, and site-visit booking override the guard.
-- **Regression Tests:** `tests/intent_detection.test.js` → prime minister, weather, rental queries
-- **Verification:** Ask *"Who is the prime minister of India?"* → rental-only decline. Ask *"2BHK in Indiranagar under 45k"* → normal search flow.
+  1. Short decline: *"I only help with Bengaluru rentals — not general questions. Want to continue? Say yes or no."*
+  2. Set `awaitingScopeContinue` — do NOT ask locality until user says **yes**.
+  3. **Yes** → `getScopeContinueResumePrompt()` (next missing slot only). **No** → reset session.
+  4. Keep interview prompts short (`getMissingRentalPrompt`, requirements) to save tokens/TTS time.
+- **Regression Tests:** `tests/intent_detection.test.js` → short `getOutOfScopeResponse`, yes/no helpers, resume prompt
+- **Verification:** Ask prime-minister question → short decline + continue ask. Say **no** → session clears. Say **yes** → one relevant question (e.g. area).
 
 ---
 

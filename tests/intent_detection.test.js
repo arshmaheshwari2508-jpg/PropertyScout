@@ -10,7 +10,10 @@ import {
   hasRentalSearchCriteria,
   getMissingRentalPrompt,
   isOutOfScopeQuery,
-  OUT_OF_SCOPE_DECLINE_MSG,
+  getOutOfScopeResponse,
+  isAffirmativeResponse,
+  isNegativeResponse,
+  getScopeContinueResumePrompt,
 } from '../src/utils/intentDetection.js';
 
 test('isOutOfScopeQuery declines general knowledge questions', () => {
@@ -31,9 +34,33 @@ test('isOutOfScopeQuery respects active rental context', () => {
   assert.equal(isOutOfScopeQuery('hello', { hasRentalContext: true }), false);
 });
 
-test('OUT_OF_SCOPE_DECLINE_MSG mentions rental-only scope', () => {
-  assert.match(OUT_OF_SCOPE_DECLINE_MSG, /rental property/i);
-  assert.match(OUT_OF_SCOPE_DECLINE_MSG, /Bengaluru/i);
+test('getOutOfScopeResponse is short and asks to continue', () => {
+  const msg = getOutOfScopeResponse();
+  assert.ok(msg.length < 120);
+  assert.match(msg, /rentals/i);
+  assert.match(msg, /yes or no/i);
+});
+
+test('scope continue yes/no helpers', () => {
+  assert.equal(isAffirmativeResponse('yes'), true);
+  assert.equal(isAffirmativeResponse('yeah sure'), true);
+  assert.equal(isNegativeResponse('no'), true);
+  assert.equal(isNegativeResponse('nope'), true);
+  assert.equal(isAffirmativeResponse('no'), false);
+});
+
+test('getScopeContinueResumePrompt resumes missing slot question', () => {
+  assert.match(getScopeContinueResumePrompt({}), /Bengaluru area/i);
+  assert.match(
+    getScopeContinueResumePrompt({ localities: ['Indiranagar'], locality: 'Indiranagar' }),
+    /Indiranagar/i
+  );
+});
+
+test('getMissingRentalPrompt uses short copy', () => {
+  const prompt = getMissingRentalPrompt({ localities: [], maxBudget: null, bedrooms: null });
+  assert.ok(prompt.length < 60);
+  assert.match(prompt, /area/i);
 });
 
 test('isPurchaseIntent catches buy an apartment', () => {
@@ -60,7 +87,7 @@ test('purchase takes precedence over rental keywords in same utterance', () => {
 test('getMissingRentalPrompt guides next question from latest partial input', () => {
   assert.match(
     getMissingRentalPrompt({ localities: [], maxBudget: null, bedrooms: null }),
-    /neighborhood/i
+    /area/i
   );
   assert.match(
     getMissingRentalPrompt({ localities: ['Indiranagar'], locality: 'Indiranagar', maxBudget: null, bedrooms: null }),

@@ -4,14 +4,14 @@
  */
 
 const DEFAULT_OPTIONS = {
-  /** RMS energy threshold (0–1). Higher = less sensitive. */
-  threshold: 0.018,
+  /** RMS energy threshold (0–1). Higher = less sensitive to speaker bleed. */
+  threshold: 0.034,
   /** Minimum sustained speech duration before firing onSpeechStart (ms). */
-  minSpeechMs: 120,
+  minSpeechMs: 220,
   /** Silence duration before firing onSpeechEnd (ms). */
   silenceMs: 350,
-  /** Ignore detections for this long after start (avoids TTS bleed-in). */
-  warmupMs: 280,
+  /** Ignore detections until TTS echo has settled (laptop speakers). */
+  warmupMs: 1800,
 };
 
 function computeRms(analyser, buffer) {

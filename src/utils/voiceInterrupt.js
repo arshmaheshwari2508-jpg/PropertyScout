@@ -52,12 +52,15 @@ export function isSoftInterruptOnly(transcript) {
 
 /**
  * True when user speech should trigger barge-in while agent is speaking.
+ * Requires explicit interrupt commands OR a multi-word utterance so TTS echo
+ * from laptop speakers does not cut off the agent mid-sentence (BUG 053).
  */
 export function shouldTriggerBargeIn(transcript) {
   const normalized = normalizeInterruptTranscript(transcript);
   if (!normalized) return false;
-  // Any non-empty speech during agent playback is a barge-in candidate.
-  return normalized.length >= 1;
+  if (isInterruptOnlyCommand(normalized)) return true;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length >= 3;
 }
 
 /**

@@ -6,6 +6,23 @@
 
 ## 📌 Active & Resolved Bug Audit Trail
 
+### 🔴 BUG 053: Agent Speech Cuts Off Mid-Sentence on Other Laptops / Speakers
+- **Reported Issue:** On a different laptop, voice agent started speaking then stopped abruptly without finishing the sentence.
+- **Root Cause:**
+  1. `startBargeInMonitoring()` ran immediately when TTS began, with VAD warmup of only 280ms.
+  2. Laptop speakers bled TTS into the mic → VAD called `cancelAgentPlayback()` instantly.
+  3. Continuous barge-in speech recognition treated any 1-word STT fragment as user speech (`shouldTriggerBargeIn` length ≥ 1).
+  4. Fresh Chrome/Safari devices sometimes had empty `getVoices()` on first speak.
+- **Fix & Guardrail Rule:**
+  1. Defer barge-in monitoring by 1.6s after TTS starts; raise VAD threshold and warmup (1800ms).
+  2. VAD energy alone MUST NOT cancel playback — only confirmed transcript via `shouldTriggerBargeIn`.
+  3. Barge-in requires explicit interrupt (`stop`, `wait`) OR ≥3 words — not single-word echo.
+  4. Wait for `speechSynthesis.onvoiceschanged` when voice list is empty before first utterance.
+- **Regression Tests:** `tests/voice_interrupt.test.js` → `shouldTriggerBargeIn requires interrupt command or multi-word speech`
+- **Verification:** On laptop with speakers (no headphones), tap Speak → greeting plays fully. Say **stop** mid-sentence → agent still interrupts correctly.
+
+---
+
 ### 🔴 BUG 052: Post-Booking Agent Restarts Site-Visit Flow
 - **Reported Issue:** After a site visit was successfully booked, the agent still offered another visit ("I can help you with a visit" / browse resume prompt) instead of closing the conversation.
 - **Root Cause:**

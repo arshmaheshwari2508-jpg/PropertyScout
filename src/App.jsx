@@ -3414,8 +3414,13 @@ export default function App() {
   const listenTimeoutRef = useRef(null);
   const speechCancelledRef = useRef(false);
   const speechStartTimeoutRef = useRef(null);
+  const bargeInArmTimeoutRef = useRef(null);
 
   const stopBargeInMonitoring = () => {
+    if (bargeInArmTimeoutRef.current) {
+      clearTimeout(bargeInArmTimeoutRef.current);
+      bargeInArmTimeoutRef.current = null;
+    }
     if (bargeInListenFallbackRef.current) {
       clearTimeout(bargeInListenFallbackRef.current);
       bargeInListenFallbackRef.current = null;
@@ -3449,6 +3454,10 @@ export default function App() {
       clearTimeout(speechStartTimeoutRef.current);
       speechStartTimeoutRef.current = null;
     }
+    if (bargeInArmTimeoutRef.current) {
+      clearTimeout(bargeInArmTimeoutRef.current);
+      bargeInArmTimeoutRef.current = null;
+    }
     currentUtteranceRef.current = null;
 
     if ('speechSynthesis' in window) {
@@ -3476,18 +3485,8 @@ export default function App() {
 
   const handleVadSpeechStart = () => {
     if (!isPlayingAudioRef.current) return;
-
-    cancelAgentPlayback();
+    // Energy alone must NOT cancel TTS — wait for a confirmed transcript (BUG 053).
     bargeInPendingRef.current = true;
-
-    if (bargeInListenFallbackRef.current) {
-      clearTimeout(bargeInListenFallbackRef.current);
-    }
-    bargeInListenFallbackRef.current = setTimeout(() => {
-      if (bargeInPendingRef.current) {
-        finishBargeIn('');
-      }
-    }, 700);
   };
 
   const startBargeInMonitoring = async () => {
@@ -3575,6 +3574,10 @@ export default function App() {
     if (speechStartTimeoutRef.current) {
       clearTimeout(speechStartTimeoutRef.current);
       speechStartTimeoutRef.current = null;
+    }
+    if (bargeInArmTimeoutRef.current) {
+      clearTimeout(bargeInArmTimeoutRef.current);
+      bargeInArmTimeoutRef.current = null;
     }
     if (speechKeepAliveIntervalRef.current) {
       clearInterval(speechKeepAliveIntervalRef.current);
@@ -3747,7 +3750,17 @@ export default function App() {
       if (autoListenAfter) {
         isVoiceModeActiveRef.current = true;
       }
-      startBargeInMonitoring();
+
+      // Defer barge-in until TTS is underway — prevents laptop speaker bleed from cutting speech
+      if (bargeInArmTimeoutRef.current) {
+        clearTimeout(bargeInArmTimeoutRef.current);
+      }
+      bargeInArmTimeoutRef.current = setTimeout(() => {
+        bargeInArmTimeoutRef.current = null;
+        if (!speechCancelledRef.current && isPlayingAudioRef.current) {
+          startBargeInMonitoring();
+        }
+      }, 1600);
 
       const speakNextSentence = () => {
         if (speechCancelledRef.current) {
@@ -3843,6 +3856,14 @@ export default function App() {
         if (speechCancelledRef.current) return;
         if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume();
+        }
+        // Chrome/Safari on fresh devices may not have voices until onvoiceschanged
+        if (window.speechSynthesis.getVoices().length === 0) {
+          window.speechSynthesis.onvoiceschanged = () => {
+            window.speechSynthesis.onvoiceschanged = null;
+            if (!speechCancelledRef.current) speakNextSentence();
+          };
+          return;
         }
         speakNextSentence();
       }, 120);

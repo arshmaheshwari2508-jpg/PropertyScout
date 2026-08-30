@@ -33,10 +33,11 @@ test('isSoftInterruptOnly matches bare no/nope/nah', () => {
   assert.equal(isSoftInterruptOnly('no I want Domlur'), false);
 });
 
-test('shouldTriggerBargeIn accepts any non-empty speech during playback', () => {
+test('shouldTriggerBargeIn requires interrupt command or multi-word speech (not TTS echo)', () => {
   assert.equal(shouldTriggerBargeIn('stop'), true);
   assert.equal(shouldTriggerBargeIn('wait'), true);
-  assert.equal(shouldTriggerBargeIn('no'), true);
+  assert.equal(shouldTriggerBargeIn('no'), false);
+  assert.equal(shouldTriggerBargeIn('the'), false);
   assert.equal(shouldTriggerBargeIn('actually show me Koramangala'), true);
   assert.equal(shouldTriggerBargeIn(''), false);
   assert.equal(shouldTriggerBargeIn('   '), false);

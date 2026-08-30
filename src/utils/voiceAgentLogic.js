@@ -103,3 +103,33 @@ export function filterPropertiesByLocalities(properties, targetLocalities, match
 export function brokerSlotUnavailable() {
   return { is_available: false, available_count: 0, error: true };
 }
+
+/** Buyer step after a site visit is successfully booked (BUG 052). */
+export const BUYER_STEP_BOOKING_COMPLETED = 6;
+
+export const BOOKING_COMPLETED_THANK_YOU = 'Thank you for choosing PropertyScout!';
+
+export function isBookingCompletedStep(step) {
+  return Number(step) === BUYER_STEP_BOOKING_COMPLETED;
+}
+
+/** After booking completes, never re-offer the visit resume / booking loop. */
+export function shouldOfferSiteVisitResume({ hasSearched, buyerStep, bookingCompleted }) {
+  if (bookingCompleted || isBookingCompletedStep(buyerStep)) return false;
+  return Boolean(hasSearched && Number(buyerStep) >= 5);
+}
+
+export function buildBookingCompletedMessage(details = {}) {
+  const parts = [];
+  if (details.propertyName && details.visitDate && details.timeSlot) {
+    parts.push(
+      `Done! Your site visit for ${details.propertyName} is confirmed on ${details.visitDate} at ${details.timeSlot}.`
+    );
+  } else if (details.propertyName) {
+    parts.push(`Done! Your site visit for ${details.propertyName} is confirmed.`);
+  }
+  if (details.email) parts.push(`Confirmation email sent to ${details.email}.`);
+  if (details.brokerName) parts.push(`${details.brokerName} will meet you at the property.`);
+  parts.push(BOOKING_COMPLETED_THANK_YOU);
+  return parts.join(' ');
+}

@@ -6,6 +6,44 @@
 
 ## 📌 Active & Resolved Bug Audit Trail
 
+### 🔴 BUG 052: Post-Booking Agent Restarts Site-Visit Flow
+- **Reported Issue:** After a site visit was successfully booked, the agent still offered another visit ("I can help you with a visit" / browse resume prompt) instead of closing the conversation.
+- **Root Cause:**
+  1. Voice and modal booking success only cleared `voiceBookingStep`; `buyerStep` stayed at `5` (post-discovery), so Speak resumed the site-visit prompt.
+  2. Post-discovery handlers still treated "yes" / booking intent as a new visit.
+- **Fix & Guardrail Rule:**
+  1. On successful booking, set `bookingCompleted` and `buyerStep = 6`.
+  2. `shouldOfferSiteVisitResume()` MUST return false when booking is completed.
+  3. Final spoken line MUST be **"Thank you for choosing PropertyScout!"** (`BOOKING_COMPLETED_THANK_YOU`).
+  4. Subsequent visit intents thank the user instead of restarting the form unless they start a new rental search.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → booking completed thank-you copy, `shouldOfferSiteVisitResume`
+- **Verification:** Complete a booking via modal or voice → agent says thank-you; tapping Speak does not replay visit offer.
+
+---
+
+### 🔴 BUG 051: ASR Variations Cause Repeated Interview Questions
+- **Reported Issue:** After the user already gave locality / budget / BHK, a noisy or slightly different ASR transcript caused the agent to ask the same question again (especially locality).
+- **Root Cause:** Each turn parsed slots only from the latest utterance. Empty or failed extracts overwrote progress instead of merging with `buyerData`.
+- **Fix & Guardrail Rule:**
+  1. `mergePersistedInterviewSlots()` keeps prior locality, budget, and BHK when the new turn has empty values.
+  2. Never re-prompt locality if `buyerData.locality` / `localities` is already set — ask only for missing slots.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → `mergePersistedInterviewSlots`
+- **Verification:** Say locality, then a garbled follow-up without a new area name → agent asks budget/BHK, not locality again.
+
+---
+
+### 🔴 BUG 050: ASR Locality Misspellings Not Recognized (Indira nager / Indranagar)
+- **Reported Issue:** Spoken variants like *"Indira nager"* and *"Indranagar"* were not mapped to **Indiranagar**. Ambiguous fragments did not confirm a closest match.
+- **Root Cause:** `extractLocalitiesFromText` used exact substring / alias matching only. No edit-distance scoring across canonical Bengaluru localities.
+- **Fix & Guardrail Rule:**
+  1. `fuzzyResolveLocality()` scores compact-key Levenshtein distance against all canonical localities and aliases.
+  2. High-confidence unique matches auto-normalize (e.g. Indira nager → Indiranagar).
+  3. Ambiguous matches ask **once**: "Did you mean {closest}?" then proceed on confirm.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → Indira nager / Indranagar, Koramangala/Whitefield/Jayanagar/HSR/Marathahalli ASR variants
+- **Verification:** Say *"1 BHK in Indira nager under 40000"* → Indiranagar shortlist. Say a vague fragment → one confirm, then continue.
+
+---
+
 ### 🔴 BUG 049: Manual Site Visit Booking Shows Misleading "Broker Error"
 - **Reported Issue:** Manual booking via **Schedule Visit** modal failed with a generic "Broker Conflict Notice" even when the real problem was network/API failure or validation error.
 - **Root Cause:**

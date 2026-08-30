@@ -7,7 +7,7 @@ import {
   checkBookingApiHealth
 } from '../utils/siteVisitBooking';
 
-export default function BookingModal({ isOpen, onClose, property }) {
+export default function BookingModal({ isOpen, onClose, property, onBookingComplete }) {
   if (!isOpen || !property) return null;
 
   const [name, setName] = useState('');
@@ -101,6 +101,9 @@ export default function BookingModal({ isOpen, onClose, property }) {
 
       setBookingResult(data);
       setIsSubmitted(true);
+      if (typeof onBookingComplete === 'function') {
+        onBookingComplete(data);
+      }
     } catch (err) {
       console.warn('Site visit booking failed:', err);
       const msg = err.message || '';

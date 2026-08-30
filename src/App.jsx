@@ -34,7 +34,13 @@ import {
   hasPreferenceInput,
   PURCHASE_DECLINE_MSG
 } from './utils/intentDetection';
-import { extractLocalitiesFromText, extractLocalityFromText } from './utils/localityResolver';
+import {
+  extractLocalitiesFromText,
+  fuzzyResolveLocality,
+  shouldConfirmFuzzyLocality,
+  buildLocalityConfirmationPrompt,
+  mergePersistedInterviewSlots,
+} from './utils/localityResolver';
 import {
   extractSoftPreferences,
   mergeSoftPreferences,
@@ -49,6 +55,11 @@ import {
   canTriggerSiteVisitBooking,
   isAmbiguousPostDiscoveryUtterance,
   getPostDiscoveryBrowsePrompt,
+  BOOKING_COMPLETED_THANK_YOU,
+  BUYER_STEP_BOOKING_COMPLETED,
+  shouldOfferSiteVisitResume,
+  isBookingCompletedStep,
+  buildBookingCompletedMessage,
 } from './utils/voiceAgentLogic';
 import { propertyMatchesLocality, resolveListingLocality } from './utils/listingLocality';
 import { apiUrl } from './utils/apiBase';
@@ -3333,6 +3344,14 @@ export default function App() {
   const buyerDataRef = useRef(buyerData);
   buyerDataRef.current = buyerData;
 
+  const [bookingCompleted, setBookingCompleted] = useState(false);
+  const bookingCompletedRef = useRef(bookingCompleted);
+  bookingCompletedRef.current = bookingCompleted;
+
+  const [pendingLocalityConfirm, setPendingLocalityConfirm] = useState(null);
+  const pendingLocalityConfirmRef = useRef(pendingLocalityConfirm);
+  pendingLocalityConfirmRef.current = pendingLocalityConfirm;
+
   const shortlistRef = useRef(shortlist);
   shortlistRef.current = shortlist;
 
@@ -3617,7 +3636,7 @@ export default function App() {
       return;
     }
 
-    if (resumeForSiteVisit) {
+    if (resumeForSiteVisit && !bookingCompletedRef.current) {
       const resumeMsg = "Which property would you like to visit? Tell me the name, or say book a site visit.";
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: resumeMsg }]);
       speakText(resumeMsg, true);
@@ -3882,6 +3901,16 @@ export default function App() {
     speakText(successMessage);
   };
 
+  const completeSiteVisitBooking = (details = {}, triggerAudio = true) => {
+    setVoiceBookingStep(null);
+    setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
+    setBookingCompleted(true);
+    setBuyerStep(BUYER_STEP_BOOKING_COMPLETED);
+    const msg = buildBookingCompletedMessage(details);
+    setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
+    if (triggerAudio) speakText(msg, false);
+  };
+
   const cancelVoiceSiteVisitBooking = (triggerAudio = true) => {
     setVoiceBookingStep(null);
     setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
@@ -3893,6 +3922,12 @@ export default function App() {
 
   const startVoiceSiteVisitBooking = (property, triggerAudio = true) => {
     if (!property) return;
+    if (bookingCompletedRef.current || isBookingCompletedStep(buyerStepRef.current)) {
+      const msg = BOOKING_COMPLETED_THANK_YOU;
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
+      if (triggerAudio) speakText(msg, false);
+      return;
+    }
     setVoiceBookingStep(null);
     setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
     setBookingProperty(property);
@@ -4030,10 +4065,13 @@ export default function App() {
         }
 
         const brokerName = data.broker?.name || 'your assigned broker';
-        const confirmMsg = `Done! Your site visit for ${property.society_name} is confirmed on ${formatVisitDateForSpeech(draft.visitDate)} at ${draft.timeSlot}. Confirmation email sent to ${draft.email}. ${brokerName} will meet you at the property.`;
-        setVoiceBookingStep(null);
-        setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
-        speakAssistant(confirmMsg);
+        completeSiteVisitBooking({
+          propertyName: property.society_name,
+          visitDate: formatVisitDateForSpeech(draft.visitDate),
+          timeSlot: draft.timeSlot,
+          email: draft.email,
+          brokerName,
+        }, triggerAudio);
       } catch (err) {
         console.warn('Voice site visit submit failed:', err);
         speakAssistant(
@@ -4255,6 +4293,8 @@ export default function App() {
     setVoiceBookingStep(null);
     setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
     setBookingProperty(null);
+    setBookingCompleted(false);
+    setPendingLocalityConfirm(null);
     setTranscriptHistory([]);
   };
 
@@ -4265,15 +4305,35 @@ export default function App() {
 
     const q = userQuery.toLowerCase();
     const parsedPrice = parseIndianCurrencyStrict(userQuery);
-    const extractedLocalities = extractLocalitiesFromText(userQuery);
+    let extractedLocalities = extractLocalitiesFromText(userQuery);
+    const fuzzyLocality = extractedLocalities.length === 0 ? fuzzyResolveLocality(userQuery) : null;
+    if (extractedLocalities.length === 0 && fuzzyLocality?.locality && !fuzzyLocality.needsConfirmation) {
+      extractedLocalities = [fuzzyLocality.locality];
+    }
     const extractedLocality = extractedLocalities.length > 0 ? extractedLocalities[0] : null;
     const currentStep = buyerStepRef.current;
     const currentData = buyerDataRef.current;
+    const pendingLoc = pendingLocalityConfirmRef.current;
 
     // Voice site-visit interview (date → time → name → phone → email → confirm)
     if (voiceBookingStepRef.current) {
       handleVoiceBookingTurn(userQuery, triggerAudio);
       return;
+    }
+
+    // After successful booking — stay completed; never restart visit flow
+    if (bookingCompletedRef.current || isBookingCompletedStep(currentStep)) {
+      const wantsNewSearch = isRentalIntent(userQuery) || extractedLocalities.length > 0;
+      if (wantsNewSearch) {
+        bookingCompletedRef.current = false;
+        setBookingCompleted(false);
+        setBuyerStep(0);
+      } else {
+        const msg = BOOKING_COMPLETED_THANK_YOU;
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
+        if (triggerAudio) speakText(msg, false);
+        return;
+      }
     }
 
     // Purchase intent — rental-only platform; never advance scripted interview
@@ -4318,10 +4378,46 @@ export default function App() {
         setUnrecognizedRepeatCount(0);
       }
 
+      // Confirm fuzzy locality once, then persist and continue
+      if (pendingLoc?.locality) {
+        const isYes = /^(yes|yeah|yep|yup|correct|that's it|thats it|right|ok|okay|sure|confirm)\b/i.test(q.trim()) || q.includes('yes');
+        const isNo = /^(no|nope|not that|wrong)\b/i.test(q.trim());
+        if (isYes && !isNo) {
+          extractedLocalities = [pendingLoc.locality];
+          setPendingLocalityConfirm(null);
+          setBuyerData((prev) => ({
+            ...prev,
+            locality: pendingLoc.locality,
+            localities: [pendingLoc.locality],
+          }));
+        } else if (isNo) {
+          setPendingLocalityConfirm(null);
+          const promptLocality = 'Okay — which neighborhood in Bengaluru should I use instead?';
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
+          if (triggerAudio) speakText(promptLocality, true);
+          return;
+        } else if (extractedLocalities.length > 0) {
+          setPendingLocalityConfirm(null);
+        } else {
+          const confirmAgain = buildLocalityConfirmationPrompt(pendingLoc);
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: confirmAgain }]);
+          if (triggerAudio) speakText(confirmAgain, true);
+          return;
+        }
+      } else if (extractedLocalities.length === 0 && shouldConfirmFuzzyLocality(fuzzyLocality)) {
+        setPendingLocalityConfirm(fuzzyLocality);
+        const confirmMsg = buildLocalityConfirmationPrompt(fuzzyLocality);
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: confirmMsg }]);
+        if (triggerAudio) speakText(confirmMsg, true);
+        return;
+      }
+
       // 0. Graceful Closing Intent (Thank you / Bye / Done)
       const isClosingIntent = q.includes('thank') || q.includes('thanks') || q.includes('bye') || q.includes('that is all') || q.includes("that's all") || q.includes('nothing else') || q.includes('no thanks') || q.includes('done');
       if (isClosingIntent) {
-        const closingMsg = `You're very welcome! I'm here 24/7 whenever you need to explore properties, check commute times, or book site visits in Bengaluru. Have a wonderful day!`;
+        const closingMsg = bookingCompletedRef.current
+          ? BOOKING_COMPLETED_THANK_YOU
+          : `You're very welcome! I'm here 24/7 whenever you need to explore properties, check commute times, or book site visits in Bengaluru. Have a wonderful day!`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: closingMsg }]);
         if (triggerAudio) speakText(closingMsg, false);
         return;
@@ -4393,15 +4489,18 @@ export default function App() {
 
       // Intent-first rental flow — skip when user is trying to book a shortlisted property
       if ((isRentalIntent(userQuery) || hasSearchCriteria) && !bookingIntent) {
-        const mergedLocalities = extractedLocalities.length > 0
-          ? extractedLocalities
-          : (currentData.localities && currentData.localities.length > 0 ? currentData.localities : []);
-        const mergedLocality = mergedLocalities.length > 0
-          ? mergedLocalities.join(' & ')
-          : (currentData.locality || '');
-        const mergedBudget = parsedPrice ?? currentData.maxBudget ?? null;
-        const mergedBhk = specifiedBhk ?? currentData.bedrooms ?? null;
-        const mergedPenthouse = isPenthouse || currentData.isPenthouse || false;
+        const slotMerge = mergePersistedInterviewSlots(currentData, {
+          localities: extractedLocalities,
+          locality: extractedLocalities.length > 0 ? extractedLocalities.join(' & ') : '',
+          maxBudget: parsedPrice,
+          bedrooms: specifiedBhk,
+          isPenthouse,
+        });
+        const mergedLocalities = slotMerge.localities;
+        const mergedLocality = slotMerge.locality;
+        const mergedBudget = slotMerge.maxBudget;
+        const mergedBhk = slotMerge.bedrooms;
+        const mergedPenthouse = slotMerge.isPenthouse;
 
         const mergedSoftPreferences = mergeSoftPreferences(currentData.softPreferences, userQuery);
         const prefsInUtterance = hasPreferenceInput(userQuery);
@@ -4536,8 +4635,11 @@ export default function App() {
         return;
       }
 
-      // Fallback: no clear intent yet — ask for locality once
-      if (currentStep <= 1 && !hasSearchCriteria && !isRentalIntent(userQuery)) {
+      // Fallback: no clear intent yet — ask for locality once (never re-ask if already persisted)
+      const alreadyHasLocality = Boolean(
+        currentData.locality || (currentData.localities && currentData.localities.length > 0)
+      );
+      if (currentStep <= 1 && !hasSearchCriteria && !isRentalIntent(userQuery) && !alreadyHasLocality) {
         setBuyerStep(1);
         const promptLocality = 'Which neighborhood or locality in Bengaluru do you prefer?';
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
@@ -4545,8 +4647,31 @@ export default function App() {
         return;
       }
 
-      // STEP 5+: Post-discovery follow-up — book on interest, or refine search only when criteria change
-      if (currentStep >= 5) {
+      // Persist slots: if locality already known, ask only for what's still missing
+      if (alreadyHasLocality && currentStep < 5 && !bookingIntent && !hasSearchCriteria && !isRentalIntent(userQuery)) {
+        const persisted = mergePersistedInterviewSlots(currentData, {
+          localities: extractedLocalities,
+          locality: extractedLocalities[0] || '',
+          maxBudget: parsedPrice,
+          bedrooms: specifiedBhk,
+          isPenthouse,
+        });
+        const missingPrompt = getMissingRentalPrompt(persisted);
+        if (missingPrompt && !(persisted.maxBudget || persisted.bedrooms || persisted.isPenthouse)) {
+          setBuyerData((prev) => ({
+            ...prev,
+            locality: persisted.locality,
+            localities: persisted.localities,
+          }));
+          setBuyerStep(2);
+          setTranscriptHistory(prev => [...prev, { role: 'assistant', text: missingPrompt }]);
+          if (triggerAudio) speakText(missingPrompt, true);
+          return;
+        }
+      }
+
+      // STEP 5: Post-discovery follow-up — skip after booking completed
+      if (currentStep >= 5 && currentStep < BUYER_STEP_BOOKING_COMPLETED) {
         const postShortlist = shortlistRef.current || shortlist;
         const postMatchProperty = findShortlistPropertyFromQuery(userQuery, postShortlist);
         if (isSiteVisitBookingIntent(userQuery, postMatchProperty)) {
@@ -4928,7 +5053,11 @@ export default function App() {
                 onStartListening={startListening}
                 onSpeakGreeting={handleSpeakWelcome}
                 onResetSession={handleResetSession}
-                postDiscoveryResume={hasSearched && buyerStep >= 5}
+                postDiscoveryResume={shouldOfferSiteVisitResume({
+                  hasSearched,
+                  buyerStep,
+                  bookingCompleted,
+                })}
                 voiceBookingActive={voiceBookingStep !== null}
               />
 
@@ -5056,6 +5185,15 @@ export default function App() {
         isOpen={!!bookingProperty}
         onClose={() => setBookingProperty(null)}
         property={bookingProperty}
+        onBookingComplete={(result) => {
+          completeSiteVisitBooking({
+            propertyName: bookingProperty?.society_name,
+            visitDate: result?.visit_date,
+            timeSlot: result?.time_slot,
+            email: result?.email_dispatch?.to_email,
+            brokerName: result?.broker?.name,
+          }, true);
+        }}
       />
 
       <InfoModals

@@ -4,7 +4,14 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractLocalitiesFromText, extractLocalityFromText } from '../src/utils/localityResolver.js';
+import {
+  extractLocalitiesFromText,
+  extractLocalityFromText,
+  fuzzyResolveLocality,
+  shouldConfirmFuzzyLocality,
+  buildLocalityConfirmationPrompt,
+  mergePersistedInterviewSlots,
+} from '../src/utils/localityResolver.js';
 import { propertyMatchesLocality, resolveListingLocality } from '../src/utils/listingLocality.js';
 import {
   extractSoftPreferences,
@@ -20,6 +27,10 @@ import {
   brokerSlotUnavailable,
   isAmbiguousPostDiscoveryUtterance,
   getPostDiscoveryBrowsePrompt,
+  BOOKING_COMPLETED_THANK_YOU,
+  shouldOfferSiteVisitResume,
+  isBookingCompletedStep,
+  buildBookingCompletedMessage,
 } from '../src/utils/voiceAgentLogic.js';
 
 const MOCK_SHORTLIST = [
@@ -168,4 +179,93 @@ test('brokerSlotUnavailable marks slots unavailable on API failure', () => {
   assert.equal(status.is_available, false);
   assert.equal(status.error, true);
   assert.equal(status.available_count, 0);
+});
+
+// BUG 050 — Fuzzy locality ASR variants (Indira nager / Indranagar → Indiranagar)
+test('fuzzyResolveLocality maps Indira nager and Indranagar to Indiranagar', () => {
+  const a = fuzzyResolveLocality('Indira nager');
+  assert.equal(a.locality, 'Indiranagar');
+  assert.ok(['exact', 'alias', 'fuzzy'].includes(a.matchType));
+
+  const b = fuzzyResolveLocality('Indranagar');
+  assert.equal(b.locality, 'Indiranagar');
+
+  const c = fuzzyResolveLocality('I want a flat in indira nager under 40k');
+  assert.equal(c.locality, 'Indiranagar');
+});
+
+test('fuzzyResolveLocality covers common ASR misspellings across Bengaluru localities', () => {
+  assert.equal(fuzzyResolveLocality('kormangala').locality, 'Koramangala');
+  assert.equal(fuzzyResolveLocality('white field').locality, 'Whitefield');
+  assert.equal(fuzzyResolveLocality('jayanager').locality, 'Jayanagar');
+  assert.equal(fuzzyResolveLocality('hsr layot').locality, 'HSR Layout');
+  assert.equal(fuzzyResolveLocality('marathalli').locality, 'Marathahalli');
+});
+
+test('ambiguous fuzzy locality asks for one confirmation', () => {
+  const result = fuzzyResolveLocality('nagar'); // too generic / ambiguous
+  if (result.needsConfirmation) {
+    assert.ok(result.candidates.length >= 1);
+    assert.match(buildLocalityConfirmationPrompt(result), /did you mean|confirm/i);
+  }
+  assert.equal(shouldConfirmFuzzyLocality(result), !!result.needsConfirmation);
+});
+
+test('extractLocalitiesFromText still returns Indiranagar for ASR variants', () => {
+  assert.ok(extractLocalitiesFromText('Indira nager').includes('Indiranagar'));
+  assert.ok(extractLocalitiesFromText('Indranagar 2bhk').includes('Indiranagar'));
+});
+
+// BUG 051 — Persist interview slots so ASR noise does not re-ask
+test('mergePersistedInterviewSlots keeps prior locality/budget/bhk when new utterance is empty noise', () => {
+  const persisted = {
+    localities: ['Indiranagar'],
+    locality: 'Indiranagar',
+    maxBudget: 45000,
+    bedrooms: 2,
+  };
+  const merged = mergePersistedInterviewSlots(persisted, {
+    localities: [],
+    locality: '',
+    maxBudget: null,
+    bedrooms: null,
+  });
+  assert.equal(merged.locality, 'Indiranagar');
+  assert.equal(merged.maxBudget, 45000);
+  assert.equal(merged.bedrooms, 2);
+  assert.deepEqual(merged.localities, ['Indiranagar']);
+});
+
+test('mergePersistedInterviewSlots prefers freshly spoken criteria when present', () => {
+  const merged = mergePersistedInterviewSlots(
+    { localities: ['Indiranagar'], locality: 'Indiranagar', maxBudget: 45000, bedrooms: 2 },
+    { localities: ['Koramangala'], locality: 'Koramangala', maxBudget: 50000, bedrooms: 1 }
+  );
+  assert.equal(merged.locality, 'Koramangala');
+  assert.equal(merged.maxBudget, 50000);
+  assert.equal(merged.bedrooms, 1);
+});
+
+// BUG 052 — Post-booking completed state
+test('booking completed thank-you copy is PropertyScout brand line', () => {
+  assert.equal(BOOKING_COMPLETED_THANK_YOU, 'Thank you for choosing PropertyScout!');
+});
+
+test('shouldOfferSiteVisitResume is false after booking completed', () => {
+  assert.equal(shouldOfferSiteVisitResume({ hasSearched: true, buyerStep: 5, bookingCompleted: false }), true);
+  assert.equal(shouldOfferSiteVisitResume({ hasSearched: true, buyerStep: 6, bookingCompleted: true }), false);
+  assert.equal(isBookingCompletedStep(6), true);
+  assert.equal(isBookingCompletedStep(5), false);
+});
+
+test('buildBookingCompletedMessage always ends with PropertyScout thank-you', () => {
+  const msg = buildBookingCompletedMessage({
+    propertyName: 'TVS Emerald',
+    visitDate: '31 August',
+    timeSlot: '10:00 AM - 11:00 AM',
+    email: 'a@b.com',
+    brokerName: 'Priya Nair',
+  });
+  assert.match(msg, /TVS Emerald/);
+  assert.ok(msg.endsWith('Thank you for choosing PropertyScout!'));
 });

@@ -9,7 +9,32 @@ import {
   isRentalIntent,
   hasRentalSearchCriteria,
   getMissingRentalPrompt,
+  isOutOfScopeQuery,
+  OUT_OF_SCOPE_DECLINE_MSG,
 } from '../src/utils/intentDetection.js';
+
+test('isOutOfScopeQuery declines general knowledge questions', () => {
+  assert.equal(isOutOfScopeQuery('Who is the prime minister of India'), true);
+  assert.equal(isOutOfScopeQuery('what is the weather today'), true);
+  assert.equal(isOutOfScopeQuery('tell me a joke'), true);
+  assert.equal(isOutOfScopeQuery('who is the president of USA'), true);
+});
+
+test('isOutOfScopeQuery allows rental and property queries', () => {
+  assert.equal(isOutOfScopeQuery('Find 2BHK in Indiranagar under 50000'), false);
+  assert.equal(isOutOfScopeQuery('I want to rent in Koramangala'), false);
+  assert.equal(isOutOfScopeQuery('how far is metro from Indiranagar'), false);
+  assert.equal(isOutOfScopeQuery('Is Koramangala safe at night'), false);
+});
+
+test('isOutOfScopeQuery respects active rental context', () => {
+  assert.equal(isOutOfScopeQuery('hello', { hasRentalContext: true }), false);
+});
+
+test('OUT_OF_SCOPE_DECLINE_MSG mentions rental-only scope', () => {
+  assert.match(OUT_OF_SCOPE_DECLINE_MSG, /rental property/i);
+  assert.match(OUT_OF_SCOPE_DECLINE_MSG, /Bengaluru/i);
+});
 
 test('isPurchaseIntent catches buy an apartment', () => {
   assert.equal(isPurchaseIntent('I want to buy an apartment'), true);

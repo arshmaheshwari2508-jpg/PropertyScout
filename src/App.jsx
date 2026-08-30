@@ -32,7 +32,9 @@ import {
   getMissingRentalPrompt,
   getRequirementsPrompt,
   hasPreferenceInput,
-  PURCHASE_DECLINE_MSG
+  PURCHASE_DECLINE_MSG,
+  OUT_OF_SCOPE_DECLINE_MSG,
+  isOutOfScopeQuery,
 } from './utils/intentDetection';
 import {
   extractLocalitiesFromText,
@@ -4397,6 +4399,28 @@ export default function App() {
     if (activePersona === 'Buyer' || activePersona === 'Renter') {
       if (currentStep !== 3) {
         setUnrecognizedRepeatCount(0);
+      }
+
+      const extractedBhksEarly = extractBhksFromText(userQuery);
+      const isPenthouseEarly = q.includes('penthouse');
+      const specifiedBhkEarly = extractedBhksEarly.length > 0
+        ? (extractedBhksEarly.length === 1 ? extractedBhksEarly[0] : extractedBhksEarly)
+        : (isPenthouseEarly ? 'penthouse' : null);
+      const hasRentalContext =
+        isRentalIntent(userQuery) ||
+        hasRentalSearchCriteria({
+          localities: extractedLocalities,
+          budget: parsedPrice,
+          bhk: specifiedBhkEarly,
+          isPenthouse: isPenthouseEarly,
+        }) ||
+        hasPreferenceInput(userQuery) ||
+        isSiteVisitBookingIntent(userQuery, findShortlistPropertyFromQuery(userQuery, shortlistRef.current || shortlist));
+
+      if (isOutOfScopeQuery(userQuery, { hasRentalContext })) {
+        setTranscriptHistory(prev => [...prev, { role: 'assistant', text: OUT_OF_SCOPE_DECLINE_MSG }]);
+        if (triggerAudio) speakText(OUT_OF_SCOPE_DECLINE_MSG, true);
+        return;
       }
 
       // Confirm fuzzy locality once, then persist and continue

@@ -11,7 +11,10 @@
     "test:voice-interrupt": "node --test tests/voice_interrupt.test.js",
     "test:intent": "node --test tests/intent_detection.test.js",
     "test:regression": "node --test tests/voice_agent_regression.test.js",
-    "test:voice": "node --test tests/voice_interrupt.test.js tests/intent_detection.test.js tests/voice_agent_regression.test.js"
+    "test:voice": "node --test tests/voice_interrupt.test.js tests/intent_detection.test.js tests/voice_agent_regression.test.js",
+    "test:backend": "python3 -m pytest tests/evals tests/test_locality_resolver.py -q",
+    "test:evals": "npm run test:voice && npm run test:backend",
+    "build:dataset": "python3 scripts/build_curated_dataset.py"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",

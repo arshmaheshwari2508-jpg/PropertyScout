@@ -1,0 +1,20 @@
+{
+  "city": "Bengaluru",
+  "localities": [
+    "Indiranagar",
+    "Koramangala",
+    "Whitefield"
+  ],
+  "listing_count": 15,
+  "listings_per_locality": 5,
+  "source": "bengaluru.rent",
+  "collection_method": "HTTP scrape attempt on bengaluru.rent with deterministic structured fallback",
+  "cleaning_steps": [
+    "PII scrub via src/data/pii_scrubber.py (phones, emails, owner fields removed)",
+    "Locality normalized to 3 instructor-scoped neighborhoods",
+    "Capped at 15 active rental listings",
+    "availability_status=Available only"
+  ],
+  "generated_at": "2026-08-30T20:45:40.388941+00:00",
+  "neighborhood_guides": "Docs/neighborhood_guides.jsonl"
+}

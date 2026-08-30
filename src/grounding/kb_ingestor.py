@@ -70,8 +70,9 @@ class KnowledgeBaseIngestor:
         metadatas: List[Dict[str, Any]] = []
         ids: List[str] = []
         
-        # 1. Ingest localities.jsonl (Atomic Record-Preserving Entity Chunking)
-        localities_path = os.path.join(self.docs_dir, "localities.jsonl")
+        # 1. Ingest neighborhood guides (scoped eval: 3 localities) or full localities.jsonl
+        scoped_path = os.path.join(self.docs_dir, "neighborhood_guides.jsonl")
+        localities_path = scoped_path if os.path.exists(scoped_path) else os.path.join(self.docs_dir, "localities.jsonl")
         if os.path.exists(localities_path):
             with open(localities_path, "r", encoding="utf-8") as f:
                 for idx, line in enumerate(f):

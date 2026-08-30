@@ -73,10 +73,10 @@ class TestVoiceAgentScenarios:
         assert "I don't have enough verified information to make that claim." in res["final_answer"]
 
     def test_scenario_8_strict_bhk_anti_leakage(self):
-        domlur_2bhk = self.db.filter_listings(locality="Domlur", listing_type="rent", exact_bedrooms=2)
-        assert len(domlur_2bhk) > 0
-        assert all(x["bedrooms"] == 2 for x in domlur_2bhk)
-        assert not any(x["bedrooms"] == 3 for x in domlur_2bhk)
+        indiranagar_2bhk = self.db.filter_listings(locality="Indiranagar", listing_type="rent", exact_bedrooms=2)
+        assert len(indiranagar_2bhk) > 0
+        assert all(x["bedrooms"] == 2 for x in indiranagar_2bhk)
+        assert not any(x["bedrooms"] == 3 for x in indiranagar_2bhk)
 
     def test_scenario_9_multi_locality_matching(self):
         indigo = self.db.filter_listings(locality="Indiranagar", listing_type="rent")

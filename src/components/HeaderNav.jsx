@@ -20,10 +20,7 @@ export default function HeaderNav({
   onToggleTheme
 }) {
   const localities = [
-    'All Bengaluru', 'Koramangala', 'Indiranagar', 'HSR Layout', 'Whitefield', 
-    'Bellandur', 'Mahadevapura', 'Hebbal', 'Sarjapur Road', 'Domlur', 
-    'Malleswaram', 'Rajajinagar', 'BTM Layout', 'Jayanagar', 'JP Nagar', 
-    'Electronic City', 'Yelahanka', 'Marathahalli', 'Banashankari'
+    'All Bengaluru', 'Koramangala', 'Indiranagar', 'Whitefield'
   ];
 
   return (

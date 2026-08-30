@@ -25,17 +25,6 @@ export default function NeighborhoodTelemetry({ selectedLocality, onInspectCitat
       policeStation: 'Indiranagar PS (0.4 km)',
       sources: ['SRC_OSM_MCP', 'SRC_KAR_POLICE_CRIME_2025']
     },
-    'HSR Layout': {
-      metro: 'Silk Board Metro Station (Upcoming Yellow Line)',
-      metroDist: '1.9 km (6 mins drive)',
-      walkTime: '15 mins walk',
-      techPark: 'Koramangala / Agara Tech Hub (1.2 km)',
-      hospital: 'Narayana Multispeciality Hospital (1.1 km)',
-      safetyScore: '8.6 / 10 (Empirical Audit)',
-      lightingIndex: '91% Illumination',
-      policeStation: 'HSR Layout PS (0.8 km)',
-      sources: ['SRC_OSM_MCP', 'SRC_KAR_POLICE_CRIME_2025']
-    },
     'Whitefield': {
       metro: 'Whitefield (Kadugodi) Metro Station (Purple Line)',
       metroDist: '1.1 km (4 mins drive)',

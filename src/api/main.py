@@ -11,6 +11,7 @@ Exposes local REST API endpoints for testing:
 
 import os
 import sys
+import json
 import threading
 from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, HTTPException
@@ -97,6 +98,10 @@ def _run_bengaluru_rent_sync() -> None:
 @app.on_event("startup")
 def auto_sync_bengaluru_rent_listings():
     """Kick off listing sync in a daemon thread so /api/health is available immediately."""
+    manifest_path = os.path.join(os.path.dirname(__file__), "../../data/dataset_manifest.json")
+    if os.path.exists(manifest_path):
+        print("Using curated instructor dataset (data/dataset_manifest.json) — skipping auto-sync.")
+        return
     if os.getenv("AUTO_SYNC_ON_STARTUP", "true").lower() == "false":
         print("Skipping bengaluru.rent auto-sync (AUTO_SYNC_ON_STARTUP=false)")
         return
@@ -144,6 +149,29 @@ class SiteVisitRequest(BaseModel):
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "version": app.version}
+
+
+@app.get("/api/sources")
+def get_sources():
+    """Returns grounded source taxonomy from Docs/sources.jsonl for the Sources drawer."""
+    path = os.path.join(os.path.dirname(__file__), "../../Docs/sources.jsonl")
+    sources = []
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    sources.append(json.loads(line))
+    return {"count": len(sources), "sources": sources}
+
+
+@app.get("/api/dataset-manifest")
+def get_dataset_manifest():
+    path = os.path.join(os.path.dirname(__file__), "../../data/dataset_manifest.json")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="dataset_manifest.json not found")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 @app.get("/api/localities")

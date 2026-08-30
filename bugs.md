@@ -12,8 +12,9 @@
 - **Fix & Guardrail Rule:**
   1. Short decline: *"I only help with Bengaluru rentals — not general questions. Want to continue? Say yes or no."*
   2. Set `awaitingScopeContinue` — do NOT ask locality until user says **yes**.
-  3. **Yes** → `getScopeContinueResumePrompt()` (next missing slot only). **No** → reset session.
-  4. Keep interview prompts short (`getMissingRentalPrompt`, requirements) to save tokens/TTS time.
+  3. **Yes** → `getScopeContinueResumePrompt()` (next missing slot, or **requirements** if step 4). **No** → reset session.
+  4. Interview prompts are concise but conversational — not telegraphic one-liners.
+  5. At step 4, `requirementsAsked` must not skip the preferences question after an off-topic detour.
 - **Regression Tests:** `tests/intent_detection.test.js` → short `getOutOfScopeResponse`, yes/no helpers, resume prompt
 - **Verification:** Ask prime-minister question → short decline + continue ask. Say **no** → session clears. Say **yes** → one relevant question (e.g. area).
 

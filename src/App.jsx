@@ -4430,7 +4430,10 @@ export default function App() {
       if (awaitingScopeContinueRef.current) {
         if (isAffirmativeResponse(userQuery)) {
           setAwaitingScopeContinue(false);
-          const resumeMsg = getScopeContinueResumePrompt(currentData);
+          const resumeMsg = getScopeContinueResumePrompt(currentData, {
+            buyerStep: currentStep,
+            hasSearched: hasSearchedRef.current || hasSearched,
+          });
           setTranscriptHistory(prev => [...prev, { role: 'assistant', text: resumeMsg }]);
           if (triggerAudio) speakText(resumeMsg, true);
           return;
@@ -4605,8 +4608,12 @@ export default function App() {
         }
 
         const readyToSearch = mergedLocalities.length > 0 && (mergedBudget || mergedBhk || mergedPenthouse);
+        const shouldAskRequirements =
+          !prefsInUtterance &&
+          !(hasSearchedRef.current || hasSearched) &&
+          (!currentData.requirementsAsked || currentStep === 4);
         if (readyToSearch) {
-          if (!currentData.requirementsAsked && !prefsInUtterance) {
+          if (shouldAskRequirements) {
             setBuyerData(prev => ({
               ...prev,
               listingType: 'rent',

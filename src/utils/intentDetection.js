@@ -6,13 +6,13 @@
 import { extractSoftPreferences, hasNoPreference } from './softPreferences.js';
 
 export const PURCHASE_DECLINE_MSG =
-  'Rentals only in Bengaluru — not purchases. Share area and budget to rent.';
+  'Property Scout is for Bengaluru rentals only — not purchases. Tell me the area and budget you want to rent in.';
 
 export const OUT_OF_SCOPE_DECLINE_MSG =
-  'I only help with Bengaluru rentals — not general questions.';
+  "I'm focused on Bengaluru rentals, so I can't answer general questions like that.";
 
 export const OUT_OF_SCOPE_CONTINUE_PROMPT =
-  'Want to continue? Say yes or no.';
+  'Would you like to continue your property search? Say yes or no.';
 
 export function getOutOfScopeResponse() {
   return `${OUT_OF_SCOPE_DECLINE_MSG} ${OUT_OF_SCOPE_CONTINUE_PROMPT}`;
@@ -28,8 +28,22 @@ export function isNegativeResponse(query) {
   return /^(no|nope|nah|stop|cancel|exit|quit|n)\b/.test(q) || q.includes('no thanks') || q.includes('not now');
 }
 
-export function getScopeContinueResumePrompt(buyerData = {}) {
-  return getMissingRentalPrompt(buyerData) || 'Which Bengaluru area, budget, and BHK are you looking for?';
+export function getScopeContinueResumePrompt(buyerData = {}, { buyerStep = 0, hasSearched = false } = {}) {
+  const loc = buyerData.locality || (buyerData.localities && buyerData.localities[0]);
+  const awaitingRequirements = Number(buyerStep) === 4 && !hasSearched;
+  if (awaitingRequirements) {
+    return getRequirementsPrompt(loc || 'your area');
+  }
+
+  const missing = getMissingRentalPrompt(buyerData);
+  if (missing) return missing;
+
+  const hasCoreSlots = loc && (buyerData.maxBudget || buyerData.bedrooms || buyerData.isPenthouse);
+  if (hasCoreSlots && !hasSearched) {
+    return getRequirementsPrompt(loc);
+  }
+
+  return 'Which Bengaluru area, budget, and BHK are you looking for?';
 }
 
 const PURCHASE_PATTERN =
@@ -101,25 +115,25 @@ export function hasRentalSearchCriteria({ localities = [], budget = null, bhk = 
 export function getMissingRentalPrompt(merged) {
   const loc = merged.locality || (merged.localities && merged.localities[0]);
   if (!loc && !merged.maxBudget && !merged.bedrooms) {
-    return 'Which Bengaluru area do you want to rent in?';
+    return 'Which neighborhood in Bengaluru are you looking to rent in?';
   }
   if (loc && !merged.maxBudget && !merged.bedrooms) {
-    return `Budget and BHK for ${loc}?`;
+    return `What's your monthly budget and how many BHK do you need in ${loc}?`;
   }
   if (!loc && (merged.maxBudget || merged.bedrooms)) {
-    return 'Which Bengaluru area?';
+    return 'Which neighborhood in Bengaluru should I search in?';
   }
   if (loc && merged.maxBudget && !merged.bedrooms) {
-    return `How many BHK in ${loc}?`;
+    return `How many BHK are you looking for in ${loc}?`;
   }
   if (loc && merged.bedrooms && !merged.maxBudget) {
-    return `Monthly rent budget for ${loc}?`;
+    return `What's your monthly rent budget for ${loc}?`;
   }
   return null;
 }
 
 export function getRequirementsPrompt(locality = 'your area') {
-  return `Any must-haves in ${locality}? Hospital, metro, furnished — or say no preference.`;
+  return `Before I search, any must-haves for ${locality}? For example — near a hospital, metro access, furnished, or pet-friendly. Share your preferences or say no preference.`;
 }
 
 export function hasPreferenceInput(userQuery) {

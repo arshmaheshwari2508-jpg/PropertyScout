@@ -194,12 +194,32 @@ function buildLocalityLookup() {
 
 const LOCALITY_LOOKUP = buildLocalityLookup();
 
+function detectConfusableLocality(text) {
+  const q = (text || '').toLowerCase().trim();
+  if (!q || q.includes('indira')) return null;
+
+  if (/^(rt|r\s*t)$/i.test(q) || /\b(rt|r\s*t)\s*nagar\b/.test(q)) {
+    return {
+      locality: 'R. T. Nagar',
+      matchType: 'confusable',
+      needsConfirmation: true,
+      candidates: ['Indiranagar', 'R. T. Nagar'],
+      confidence: 0.7,
+      distance: 1,
+    };
+  }
+  return null;
+}
+
 function extractExactLocalitiesFromText(text) {
   if (!text) return [];
   const q = text.toLowerCase();
   const matched = new Set();
 
   for (const [alias, canonical] of Object.entries(LOCALITY_ALIASES)) {
+    if ((alias === 'rt nagar' || alias === 'r t nagar') && q.includes(alias) && !q.includes('indira')) {
+      continue;
+    }
     if (q.includes(alias)) matched.add(canonical);
   }
 
@@ -252,6 +272,9 @@ export function fuzzyResolveLocality(text) {
     distance: Infinity,
   };
   if (!text || !String(text).trim()) return empty;
+
+  const confusable = detectConfusableLocality(text);
+  if (confusable) return confusable;
 
   const exact = extractExactLocalitiesFromText(text);
   if (exact.length === 1) {
@@ -346,6 +369,9 @@ export function shouldConfirmFuzzyLocality(result) {
 export function buildLocalityConfirmationPrompt(result) {
   if (!result?.locality) {
     return 'Which neighborhood or locality in Bengaluru do you prefer? For example Koramangala, Indiranagar, or Whitefield.';
+  }
+  if (result.matchType === 'confusable') {
+    return 'Did you mean Indiranagar or R T Nagar? Please confirm once and I will continue.';
   }
   const alts = (result.candidates || []).filter((c) => c !== result.locality).slice(0, 2);
   if (alts.length) {

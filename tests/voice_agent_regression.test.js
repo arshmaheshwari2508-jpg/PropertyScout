@@ -31,6 +31,7 @@ import {
   shouldOfferSiteVisitResume,
   isBookingCompletedStep,
   buildBookingCompletedMessage,
+  userAlreadyPickedShortlistProperty,
 } from '../src/utils/voiceAgentLogic.js';
 
 const MOCK_SHORTLIST = [
@@ -135,6 +136,44 @@ test('mergeSoftPreferences accumulates requirements across turns', () => {
 });
 
 // BUG 048 — Voice site visit booking
+test('RT Nagar STT triggers Indiranagar vs R T Nagar confirmation', () => {
+  const fuzzy = fuzzyResolveLocality('RT Nagar');
+  assert.equal(shouldConfirmFuzzyLocality(fuzzy), true);
+  assert.ok(fuzzy.candidates.includes('Indiranagar'));
+  assert.ok(fuzzy.candidates.includes('R. T. Nagar'));
+  assert.match(buildLocalityConfirmationPrompt(fuzzy), /Indiranagar/i);
+  assert.equal(extractLocalitiesFromText('RT Nagar').length, 0);
+  assert.ok(extractLocalitiesFromText('Indira nagar').includes('Indiranagar'));
+});
+
+test('findShortlistPropertyFromQuery matches Godrej Greens by distinctive tokens', () => {
+  const list = [{ society_name: 'Godrej Greens R. T. Nagar', locality: 'R. T. Nagar' }];
+  const match = findShortlistPropertyFromQuery('Godrej greens', list);
+  assert.ok(match);
+  assert.match(match.society_name, /Godrej Greens/i);
+});
+
+test('findShortlistPropertyFromQuery does not false-match Indiranagar to RT Nagar property', () => {
+  const list = [{ society_name: 'Godrej Greens R. T. Nagar', locality: 'R. T. Nagar' }];
+  assert.equal(findShortlistPropertyFromQuery('Indira nagar', list), null);
+});
+
+test('isSiteVisitBookingIntent starts booking when user names the property', () => {
+  const list = [{ society_name: 'Godrej Greens R. T. Nagar', locality: 'R. T. Nagar' }];
+  const property = findShortlistPropertyFromQuery('Godrej greens', list);
+  assert.equal(isSiteVisitBookingIntent('Godrej greens', property), true);
+});
+
+test('userAlreadyPickedShortlistProperty detects prior property name in transcript', () => {
+  const list = [{ society_name: 'Godrej Greens R. T. Nagar', locality: 'R. T. Nagar' }];
+  const picked = userAlreadyPickedShortlistProperty(
+    [{ role: 'user', text: 'Godrej greens' }],
+    list
+  );
+  assert.ok(picked);
+  assert.match(picked.society_name, /Godrej Greens/i);
+});
+
 test('findShortlistPropertyFromQuery matches TVS Emerald from voice utterance', () => {
   const match = findShortlistPropertyFromQuery('TVS Emerald, book a site visit', MOCK_SHORTLIST);
   assert.ok(match);

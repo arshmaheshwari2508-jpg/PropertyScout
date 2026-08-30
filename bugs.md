@@ -6,6 +6,18 @@
 
 ## 📌 Active & Resolved Bug Audit Trail
 
+### 🔴 BUG 055: Property Name After Results Does Not Auto-Start Site Visit Booking
+- **Reported Issue:** User said *"Godrej greens"* after results but agent repeated *"Which property would you like to visit?"* instead of opening booking. Saying *"Indira nagar"* falsely matched RT Nagar property via generic token `"nagar"`.
+- **Root Cause:** `isSiteVisitBookingIntent` required explicit "like/book" words; `findShortlistPropertyFromQuery` scored generic tokens (`nagar`) against society names; STT *"RT Nagar"* auto-mapped without confirming vs Indiranagar.
+- **Fix & Guardrail Rule:**
+  1. `isConfidentPropertyNamePick` — naming a shortlist property auto-starts site visit booking.
+  2. Filter generic society tokens in property name matching.
+  3. `userAlreadyPickedShortlistProperty` — tapping Speak after naming a property resumes booking directly.
+  4. RT Nagar / Indiranagar STT confusables require one confirmation.
+- **Regression Tests:** `tests/voice_agent_regression.test.js` → Godrej greens booking, Indiranagar false-match guard, RT Nagar confirm
+
+---
+
 ### 🔴 BUG 054: General Knowledge Questions Trigger Rental Interview
 - **Reported Issue:** User asked *"Who is the prime minister of India?"* but agent gave a long reply and jumped straight to locality/budget questions.
 - **Root Cause:** Frontend had no out-of-scope intercept; after decline was added, copy was too long and flow skipped user consent before resuming interview.

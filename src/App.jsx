@@ -67,6 +67,8 @@ import {
   shouldOfferSiteVisitResume,
   isBookingCompletedStep,
   buildBookingCompletedMessage,
+  userAlreadyPickedShortlistProperty,
+  isConfidentPropertyNamePick,
 } from './utils/voiceAgentLogic';
 import { propertyMatchesLocality, resolveListingLocality } from './utils/listingLocality';
 import { apiUrl } from './utils/apiBase';
@@ -3651,7 +3653,15 @@ export default function App() {
     }
 
     if (resumeForSiteVisit && !bookingCompletedRef.current) {
-      const resumeMsg = "Which property would you like to visit? Tell me the name, or say book a site visit.";
+      const list = shortlistRef.current || shortlist;
+      const picked = userAlreadyPickedShortlistProperty(transcriptHistory, list);
+      if (picked) {
+        startVoiceSiteVisitBooking(picked, true);
+        return;
+      }
+      const resumeMsg = list.length === 1
+        ? `Ready to book ${list[0]?.society_name || 'your match'}? Say the name again or "book a site visit".`
+        : 'Which property would you like to visit? Tell me the name, or say book a site visit.';
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: resumeMsg }]);
       speakText(resumeMsg, true);
       return;
@@ -4524,7 +4534,8 @@ export default function App() {
       const browseActive = hasSearchedRef.current || hasSearched || currentStep >= 5;
       const readyToBook = browseActive && activeShortlist.length > 0 && (
         (isSimpleYes && matchedProperty) ||
-        (isPropertyInterest && matchedProperty)
+        (isPropertyInterest && matchedProperty) ||
+        isConfidentPropertyNamePick(userQuery, matchedProperty)
       );
 
       if (readyToBook) {
@@ -4760,6 +4771,17 @@ export default function App() {
       if (currentStep >= 5 && currentStep < BUYER_STEP_BOOKING_COMPLETED) {
         const postShortlist = shortlistRef.current || shortlist;
         const postMatchProperty = findShortlistPropertyFromQuery(userQuery, postShortlist);
+        const localityRefine = extractedLocalities.length > 0 || parsedPrice || specifiedBhk || isPenthouse;
+
+        if (
+          postMatchProperty &&
+          isConfidentPropertyNamePick(userQuery, postMatchProperty) &&
+          !localityRefine
+        ) {
+          startVoiceSiteVisitBooking(postMatchProperty, triggerAudio);
+          return;
+        }
+
         if (isSiteVisitBookingIntent(userQuery, postMatchProperty)) {
           startVoiceSiteVisitBooking(postMatchProperty || postShortlist[0], triggerAudio);
           return;

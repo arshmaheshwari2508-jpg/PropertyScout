@@ -20,6 +20,29 @@ export function stripBookingWords(text) {
     .trim();
 }
 
+/** Generic tokens that must not alone match a society name (e.g. "nagar" → false RT Nagar pick). */
+const GENERIC_SOCIETY_TOKENS = new Set([
+  'nagar', 'layout', 'area', 'road', 'town', 'city', 'block', 'puram', 'pura',
+  'phase', 'extension', 'cross', 'main', 'station', 'metro', 'greens', 'park',
+  'view', 'villa', 'residency', 'apartment', 'complex', 'society', 'heights',
+  'tower', 'enclave', 'estate', 'garden', 'court', 'palms', 'meadows', 'sanctuary',
+  'elegance', 'splendour', 'splendor', 'gateway', 'corner', 'square', 'plaza',
+]);
+
+function isDistinctiveSocietyToken(token) {
+  return token.length >= 3 && !GENERIC_SOCIETY_TOKENS.has(token);
+}
+
+function scoreDistinctiveNameTokens(queryText, strippedText, societyName) {
+  const name = normalizeMatchText(societyName);
+  const tokens = name.split(/[\s,&\-()]+/).filter(isDistinctiveSocietyToken);
+  let score = 0;
+  for (const token of tokens) {
+    if (queryText.includes(token) || strippedText.includes(token)) score += token.length;
+  }
+  return score;
+}
+
 export function findShortlistPropertyFromQuery(query, list) {
   if (!query || !list?.length) return null;
   const q = normalizeMatchText(query);
@@ -34,18 +57,35 @@ export function findShortlistPropertyFromQuery(query, list) {
   let best = null;
   let bestScore = 0;
   for (const p of candidates) {
-    const name = normalizeMatchText(p.society_name);
-    const tokens = name.split(/[\s,&\-()]+/).filter((t) => t.length >= 3);
-    let score = 0;
-    for (const t of tokens) {
-      if (q.includes(t) || stripped.includes(t)) score += t.length;
-    }
+    const score = scoreDistinctiveNameTokens(q, stripped, p.society_name);
     if (score > bestScore) {
       bestScore = score;
       best = p;
     }
   }
   return bestScore >= 4 ? best : null;
+}
+
+/** True when the utterance confidently names a shortlist property (not a locality like "Indiranagar"). */
+export function isConfidentPropertyNamePick(query, matchedProperty) {
+  if (!query || !matchedProperty?.society_name) return false;
+  const q = normalizeMatchText(query);
+  const stripped = stripBookingWords(query);
+  const name = normalizeMatchText(matchedProperty.society_name);
+  if (q.includes(name) || (stripped.length >= 4 && name.includes(stripped))) return true;
+  return scoreDistinctiveNameTokens(q, stripped, matchedProperty.society_name) >= 4;
+}
+
+export function userAlreadyPickedShortlistProperty(transcriptHistory = [], shortlist = []) {
+  if (!shortlist?.length || !transcriptHistory?.length) return false;
+  for (let i = transcriptHistory.length - 1; i >= 0; i--) {
+    const turn = transcriptHistory[i];
+    if (turn.role !== 'user') continue;
+    if (isConfidentPropertyNamePick(turn.text, findShortlistPropertyFromQuery(turn.text, shortlist))) {
+      return findShortlistPropertyFromQuery(turn.text, shortlist);
+    }
+  }
+  return null;
 }
 
 export function isSiteVisitBookingIntent(query, matchedProperty) {
@@ -65,7 +105,8 @@ export function isSiteVisitBookingIntent(query, matchedProperty) {
     q.includes('book appointment') ||
     (q.includes('book') && (q.includes('visit') || q.includes('slot') || q.includes('tour'))) ||
     ((q.includes('book') || q.includes('schedule')) && !!matchedProperty) ||
-    (showsInterest && !!matchedProperty)
+    (showsInterest && !!matchedProperty) ||
+    isConfidentPropertyNamePick(query, matchedProperty)
   );
 }
 

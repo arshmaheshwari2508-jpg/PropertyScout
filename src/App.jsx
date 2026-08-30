@@ -46,7 +46,9 @@ import {
 import {
   findShortlistPropertyFromQuery,
   isSiteVisitBookingIntent,
-  canTriggerSiteVisitBooking
+  canTriggerSiteVisitBooking,
+  isAmbiguousPostDiscoveryUtterance,
+  getPostDiscoveryBrowsePrompt,
 } from './utils/voiceAgentLogic';
 import { propertyMatchesLocality, resolveListingLocality } from './utils/listingLocality';
 import { apiUrl } from './utils/apiBase';
@@ -202,8 +204,6 @@ const normalizeListings = (list) => {
   const flat = list.some((item) => Array.isArray(item)) ? list.flat() : list;
   return flat.filter((item) => item && item.listing_id);
 };
-
-const PROPERTY_BROWSE_VOICE_PROMPT = 'Have a look at the properties on your screen and tell me which one you would like to book a site visit for.';
 
 const formatVisitDateForSpeech = (dateStr) => {
   if (!dateStr) return dateStr;
@@ -4123,7 +4123,7 @@ export default function App() {
       setBuyerStep(5); // Transition to Post-Discovery Completed Mode!
 
       const noMatchMsg = nearbyAlternatives.length > 0
-        ? `Sorry, no exact matches in that area. I've put ${nearbyAlternatives.length} nearby alternatives on your screen. ${PROPERTY_BROWSE_VOICE_PROMPT}`
+        ? `Sorry, no exact matches in that area. I've put ${nearbyAlternatives.length} nearby alternatives on your screen. ${getPostDiscoveryBrowsePrompt(nearbyAlternatives)}`
         : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: noMatchMsg }]);
       speakText(noMatchMsg, false);
@@ -4214,13 +4214,12 @@ export default function App() {
     });
 
     if (!budgetConstraintMet && data.maxBudget) {
-      const budgetMsg = `I couldn't find exact matches within your budget, but these are the closest options in ${localityDisplay}. ${verdictMsg} ${PROPERTY_BROWSE_VOICE_PROMPT}`;
+      const budgetMsg = `I couldn't find exact matches within your budget, but these are the closest options in ${localityDisplay}. ${verdictMsg}`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: budgetMsg }]);
       speakText(budgetMsg, false);
     } else {
-      const fullMsg = `${verdictMsg} ${PROPERTY_BROWSE_VOICE_PROMPT}`;
-      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: fullMsg }]);
-      speakText(fullMsg, false);
+      setTranscriptHistory(prev => [...prev, { role: 'assistant', text: verdictMsg }]);
+      speakText(verdictMsg, false);
     }
     setUnrecognizedRepeatCount(0);
     } catch (err) {
@@ -4355,8 +4354,8 @@ export default function App() {
         return;
       }
 
-      // Step 4: user answered requirements question — store prefs and search
-      if ((currentStep === 4 || currentData.requirementsAsked) && hasPreferenceInput(userQuery) && !bookingIntent) {
+      // Step 4: user answered requirements question — store prefs and search (not after results shown)
+      if (currentStep === 4 && hasPreferenceInput(userQuery) && !bookingIntent) {
         const mergedSoftPreferences = mergeSoftPreferences(currentData.softPreferences, userQuery);
         const searchPayload = {
           localities: currentData.localities?.length ? currentData.localities : (currentData.locality ? [currentData.locality] : []),
@@ -4466,7 +4465,7 @@ export default function App() {
           return;
         }
 
-        if (currentData.requirementsAsked && mergedLocalities.length > 0 && prefsInUtterance) {
+        if (currentStep < 5 && currentData.requirementsAsked && mergedLocalities.length > 0 && prefsInUtterance) {
           const requirementSearchData = {
             ...mergedData,
             maxBudget: mergedBudget ?? currentData.maxBudget ?? null,
@@ -4555,14 +4554,19 @@ export default function App() {
           return;
         }
 
+        if (postShortlist.length === 1 && isAmbiguousPostDiscoveryUtterance(userQuery)) {
+          startVoiceSiteVisitBooking(postShortlist[0], triggerAudio);
+          return;
+        }
+
         const isSearchRefine = extractedLocalities.length > 0 || parsedPrice || specifiedBhk || isPenthouse ||
           isRentalIntent(userQuery) ||
           q.includes('show me') || q.includes('find ') || q.includes('search') || q.includes('another') || q.includes('different');
 
         if (!isSearchRefine) {
-          const remindMsg = PROPERTY_BROWSE_VOICE_PROMPT;
+          const remindMsg = getPostDiscoveryBrowsePrompt(postShortlist);
           setTranscriptHistory(prev => [...prev, { role: 'assistant', text: remindMsg }]);
-          if (triggerAudio) speakText(remindMsg, true);
+          if (triggerAudio) speakText(remindMsg, false);
           return;
         }
 
@@ -4656,11 +4660,11 @@ export default function App() {
     }
 
     const defaultMsg = shortlist.length > 0
-      ? `${PROPERTY_BROWSE_VOICE_PROMPT}`
+      ? getPostDiscoveryBrowsePrompt(shortlist)
       : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
 
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: defaultMsg }]);
-    if (triggerAudio) speakText(defaultMsg);
+    if (triggerAudio) speakText(defaultMsg, false);
   };
 
   const handleSellerIntakeSubmit = (newProperty) => {

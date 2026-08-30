@@ -144,7 +144,12 @@ export function buildShortlistVerdict({ properties = [], preferences = [], local
   const reason = getPropertyPreferenceReason(properties[0], preferences);
   const reasonClause = reason ? ` ${reason}` : '';
 
-  return `I found ${count} rental ${count === 1 ? 'option' : 'options'}${criteriaText}.${prefClause}${reasonClause} They're on your screen — tell me which one you'd like to book a site visit for.`;
+  if (count === 1) {
+    const name = properties[0]?.society_name || 'on your screen';
+    return `I found 1 rental option${criteriaText}.${prefClause}${reasonClause} It's ${name} — say "book a site visit" or tap Schedule Visit when you're ready.`;
+  }
+
+  return `I found ${count} rental options${criteriaText}.${prefClause}${reasonClause} They're on your screen — tell me which one you'd like to book a site visit for.`;
 }
 
 export { PREFERENCE_RULES };

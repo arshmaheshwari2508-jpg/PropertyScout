@@ -18,6 +18,8 @@ import {
   canTriggerSiteVisitBooking,
   filterPropertiesByLocalities,
   brokerSlotUnavailable,
+  isAmbiguousPostDiscoveryUtterance,
+  getPostDiscoveryBrowsePrompt,
 } from '../src/utils/voiceAgentLogic.js';
 
 const MOCK_SHORTLIST = [
@@ -145,6 +147,19 @@ test('canTriggerSiteVisitBooking works without hasSearched gate when shortlist e
     }),
     true
   );
+});
+
+// Post-discovery loop guard — STT "come" must not re-trigger search at step 5+
+test('isAmbiguousPostDiscoveryUtterance treats STT "come" as post-discovery noise', () => {
+  assert.equal(isAmbiguousPostDiscoveryUtterance('come'), true);
+  assert.equal(isAmbiguousPostDiscoveryUtterance('yes'), true);
+  assert.equal(isAmbiguousPostDiscoveryUtterance('book a site visit'), false);
+});
+
+test('getPostDiscoveryBrowsePrompt names single property for booking', () => {
+  const prompt = getPostDiscoveryBrowsePrompt([{ society_name: 'Brigade Gateway' }]);
+  assert.match(prompt, /Brigade Gateway/);
+  assert.match(prompt, /book a site visit/i);
 });
 
 // BUG 049 — Manual booking broker error (pessimistic availability fallback)

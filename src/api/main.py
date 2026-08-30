@@ -28,19 +28,25 @@ app = FastAPI(
     version="2.4.0"
 )
 
-# CORS — restrict to configured origins in production (Vercel frontend)
+# CORS — local Vite + production Vercel frontend (booking modal is browser-side)
+# Without Access-Control-Allow-Origin for the Vercel host, fetch() fails and the UI
+# shows "Could not reach the booking server" even when Railway is healthy.
+_DEFAULT_CORS_ORIGINS = ",".join([
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://property-scout-beryl.vercel.app",
+])
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv(
-        "CORS_ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
     if origin.strip()
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    # Preview + production Vercel deployments share *.vercel.app
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

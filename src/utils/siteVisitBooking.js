@@ -8,13 +8,40 @@ export const SITE_VISIT_TIME_SLOTS = [
   '04:00 PM - 05:00 PM'
 ];
 
+const API_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function checkBookingApiHealth() {
+  try {
+    const res = await fetchWithTimeout(apiUrl('/api/health'));
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => ({}));
+    return data.status === 'healthy' || res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchBrokerSlotAvailability(visitDate) {
   const statusMap = {};
   for (const slot of SITE_VISIT_TIME_SLOTS) {
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         apiUrl(`/api/brokers/availability?visit_date=${visitDate}&time_slot=${encodeURIComponent(slot)}`)
       );
+      if (!res.ok) {
+        statusMap[slot] = brokerSlotUnavailable();
+        continue;
+      }
       const data = await res.json();
       statusMap[slot] = {
         is_available: data.is_available,
@@ -39,7 +66,7 @@ export function getPropertyAskingPrice(property) {
 }
 
 export async function submitSiteVisitRequest(property, draft) {
-  const res = await fetch(apiUrl('/api/schedule-site-visit'), {
+  const res = await fetchWithTimeout(apiUrl('/api/schedule-site-visit'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

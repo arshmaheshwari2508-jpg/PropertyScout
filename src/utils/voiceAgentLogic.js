@@ -1,5 +1,7 @@
 /** Testable voice-agent helpers extracted from App.jsx */
 
+import { hasNoPreference } from './softPreferences.js';
+
 export function normalizeMatchText(text) {
   return (text || '')
     .toLowerCase()
@@ -70,6 +72,22 @@ export function isSiteVisitBookingIntent(query, matchedProperty) {
 export function canTriggerSiteVisitBooking({ bookingIntent, matchedProperty, shortlistLength }) {
   if (!bookingIntent || shortlistLength <= 0) return false;
   return !!matchedProperty || bookingIntent;
+}
+
+/** STT noise / short affirmatives after results are shown — not a new search. */
+export function isAmbiguousPostDiscoveryUtterance(query) {
+  if (!query) return false;
+  const q = query.toLowerCase().trim();
+  if (hasNoPreference(query)) return true;
+  return /^(come|yes|yeah|yep|ok|okay|sure|go ahead|fine|good|great|please|book it|that one|this one|the first one|first one|proceed|continue)$/i.test(q);
+}
+
+export function getPostDiscoveryBrowsePrompt(shortlist = []) {
+  if (shortlist.length === 1) {
+    const name = shortlist[0]?.society_name || 'the property on your screen';
+    return `You have one match — ${name}. Say "book a site visit" or tap Schedule Visit on the card.`;
+  }
+  return 'Have a look at the properties on your screen and tell me which one you would like to book a site visit for.';
 }
 
 export function filterPropertiesByLocalities(properties, targetLocalities, matchesLocalityFn) {

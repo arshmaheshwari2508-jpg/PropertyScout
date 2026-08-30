@@ -3,7 +3,8 @@ import { X, CalendarCheck, CheckCircle2, FileText, Send, Phone, Mail, Sparkles, 
 import {
   SITE_VISIT_TIME_SLOTS,
   fetchBrokerSlotAvailability,
-  submitSiteVisitRequest
+  submitSiteVisitRequest,
+  checkBookingApiHealth
 } from '../utils/siteVisitBooking';
 
 export default function BookingModal({ isOpen, onClose, property }) {
@@ -24,6 +25,7 @@ export default function BookingModal({ isOpen, onClose, property }) {
   const [bookingResult, setBookingResult] = useState(null);
   const [bookingError, setBookingError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [availabilityUnknown, setAvailabilityUnknown] = useState(false);
 
   const availableSlots = SITE_VISIT_TIME_SLOTS;
 
@@ -36,12 +38,19 @@ export default function BookingModal({ isOpen, onClose, property }) {
   const fetchSlotAvailability = async (targetDate) => {
     setIsLoadingSlots(true);
     setBookingError(null);
+    setAvailabilityUnknown(false);
     const statusMap = await fetchBrokerSlotAvailability(targetDate);
     setSlotStatusMap(statusMap);
 
     const apiErrors = Object.values(statusMap).filter((slot) => slot?.error);
     if (apiErrors.length === SITE_VISIT_TIME_SLOTS.length) {
-      setBookingError('Could not reach the booking server. Check your connection or try again in a moment.');
+      setAvailabilityUnknown(true);
+      const healthy = await checkBookingApiHealth();
+      setBookingError(
+        healthy
+          ? 'Broker availability could not be loaded. You can still submit — we will verify your slot on confirmation.'
+          : 'Booking server is offline. In a separate terminal run: npm run dev:api — then click Retry below.'
+      );
     }
 
     const firstFree = availableSlots.find((s) => statusMap[s]?.is_available);
@@ -60,9 +69,9 @@ export default function BookingModal({ isOpen, onClose, property }) {
       return;
     }
 
-    // Check if slot is available
+    // Check if slot is available (skip when availability API was unreachable)
     const slotInfo = slotStatusMap[selectedSlot];
-    if (slotInfo && !slotInfo.is_available) {
+    if (!availabilityUnknown && slotInfo && !slotInfo.is_available) {
       setBookingError(`The slot ${selectedSlot} is fully booked by all 8 brokers. Please select a green available slot.`);
       return;
     }
@@ -95,10 +104,10 @@ export default function BookingModal({ isOpen, onClose, property }) {
     } catch (err) {
       console.warn('Site visit booking failed:', err);
       const msg = err.message || '';
-      const isNetwork = /failed|fetch|network|connection|502|503|504/i.test(msg);
+      const isNetwork = /failed|fetch|network|connection|502|503|504|abort/i.test(msg);
       setBookingError(
         isNetwork
-          ? 'Could not reach the booking server. Confirm VITE_API_BASE_URL is set and the Railway backend is running.'
+          ? 'Could not reach the booking server. Run npm run dev:api in a separate terminal, then retry.'
           : (msg || 'Could not complete booking. Please try again.')
       );
     } finally {
@@ -169,20 +178,40 @@ export default function BookingModal({ isOpen, onClose, property }) {
 
             {bookingError && (
               <div style={{
-                background: '#fef2f2',
-                border: '1px solid #fca5a5',
+                background: availabilityUnknown ? '#fffbeb' : '#fef2f2',
+                border: availabilityUnknown ? '1px solid #fcd34d' : '1px solid #fca5a5',
                 borderRadius: '12px',
                 padding: '12px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                color: '#991b1b',
+                color: availabilityUnknown ? '#92400e' : '#991b1b',
                 fontSize: '0.8rem'
               }}>
                 <AlertCircle size={20} style={{ shrink: 0 }} />
-                <div>
-                  <strong>Booking Error:</strong>
+                <div style={{ flex: 1 }}>
+                  <strong>{availabilityUnknown ? 'Availability Unverified:' : 'Booking Error:'}</strong>
                   <p style={{ margin: '2px 0 0 0' }}>{bookingError}</p>
+                  {availabilityUnknown && (
+                    <button
+                      type="button"
+                      onClick={() => fetchSlotAvailability(visitDate)}
+                      disabled={isLoadingSlots}
+                      style={{
+                        marginTop: '8px',
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #fcd34d',
+                        background: '#ffffff',
+                        color: '#92400e',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {isLoadingSlots ? 'Retrying…' : 'Retry connection'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -347,7 +376,7 @@ export default function BookingModal({ isOpen, onClose, property }) {
 
             <button
               type="submit"
-              disabled={isSubmitting || (slotStatusMap[selectedSlot] && !slotStatusMap[selectedSlot].is_available)}
+              disabled={isSubmitting || (!availabilityUnknown && slotStatusMap[selectedSlot] && !slotStatusMap[selectedSlot].is_available)}
               className="btn-primary"
               style={{ justifyContent: 'center', padding: '12px', marginTop: '6px' }}
             >

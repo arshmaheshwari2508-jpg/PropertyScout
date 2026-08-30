@@ -146,10 +146,10 @@ export function buildShortlistVerdict({ properties = [], preferences = [], local
 
   if (count === 1) {
     const name = properties[0]?.society_name || 'on your screen';
-    return `I found 1 rental option${criteriaText}.${prefClause}${reasonClause} It's ${name} — say "book a site visit" or tap Schedule Visit when you're ready.`;
+    return `Exciting news — I found a great rental${criteriaText}!${prefClause}${reasonClause} It's ${name} — say the name or "book a site visit" and let's get you in the door!`;
   }
 
-  return `I found ${count} rental options${criteriaText}.${prefClause}${reasonClause} They're on your screen — tell me which one you'd like to book a site visit for.`;
+  return `I've found ${count} promising rentals${criteriaText}!${prefClause}${reasonClause} They're on your screen now — tell me which one catches your eye and I'll help you book a visit!`;
 }
 
 export { PREFERENCE_RULES };

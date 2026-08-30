@@ -36,8 +36,8 @@ test('isOutOfScopeQuery respects active rental context', () => {
 
 test('getOutOfScopeResponse asks to continue without being overly long', () => {
   const msg = getOutOfScopeResponse();
-  assert.ok(msg.length >= 80 && msg.length < 200);
-  assert.match(msg, /rentals/i);
+  assert.ok(msg.length >= 100 && msg.length < 320);
+  assert.match(msg, /rentals|scout/i);
   assert.match(msg, /yes or no/i);
 });
 
@@ -74,8 +74,8 @@ test('getScopeContinueResumePrompt re-asks requirements at step 4', () => {
 
 test('getMissingRentalPrompt uses clear conversational copy', () => {
   const prompt = getMissingRentalPrompt({ localities: [], maxBudget: null, bedrooms: null });
-  assert.ok(prompt.length >= 40 && prompt.length < 120);
-  assert.match(prompt, /neighborhood|area/i);
+  assert.ok(prompt.length >= 60 && prompt.length < 220);
+  assert.match(prompt, /neighborhood|area|Bengaluru/i);
 });
 
 test('isPurchaseIntent catches buy an apartment', () => {

@@ -368,16 +368,16 @@ export function shouldConfirmFuzzyLocality(result) {
 
 export function buildLocalityConfirmationPrompt(result) {
   if (!result?.locality) {
-    return 'Which neighborhood or locality in Bengaluru do you prefer? For example Koramangala, Indiranagar, or Whitefield.';
+    return "Let's nail down the location! Which Bengaluru neighborhood are you most interested in — Koramangala, Indiranagar, Whitefield, or somewhere else?";
   }
   if (result.matchType === 'confusable') {
-    return 'Did you mean Indiranagar or R T Nagar? Please confirm once and I will continue.';
+    return 'Just to make sure I search the right area — did you mean Indiranagar or R T Nagar? Say either one and we\'ll keep going!';
   }
   const alts = (result.candidates || []).filter((c) => c !== result.locality).slice(0, 2);
   if (alts.length) {
-    return `Did you mean ${result.locality}, or perhaps ${alts.join(' or ')}? Please confirm once and I will continue.`;
+    return `I want to get this right — did you mean ${result.locality}, or perhaps ${alts.join(' or ')}? Confirm once and I'll jump straight into the search!`;
   }
-  return `Did you mean ${result.locality}? Please confirm once and I will continue.`;
+  return `Did you mean ${result.locality}? Just confirm once and I'll find the best rentals there for you!`;
 }
 
 /** Keep previously collected interview slots when ASR produces empty/noisy turns. */

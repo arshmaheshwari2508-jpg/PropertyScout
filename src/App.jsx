@@ -3646,7 +3646,7 @@ export default function App() {
     }
 
     if (speakGreetingIfFirst && transcriptHistory.length === 0) {
-      const greeting = "Welcome to Property Scout! How should I help you today?";
+      const greeting = "Welcome to Property Scout — your AI rental assistant for Bengaluru! Tell me what you're looking for and let's find your perfect home together.";
       setTranscriptHistory([{ role: 'assistant', text: greeting }]);
       speakText(greeting, true);
       return;
@@ -3660,8 +3660,8 @@ export default function App() {
         return;
       }
       const resumeMsg = list.length === 1
-        ? `Ready to book ${list[0]?.society_name || 'your match'}? Say the name again or "book a site visit".`
-        : 'Which property would you like to visit? Tell me the name, or say book a site visit.';
+        ? `Ready when you are! Say "${list[0]?.society_name || 'the property name'}" or "book a site visit" and I'll get your visit scheduled in no time.`
+        : "You've got some great options on screen! Tell me which property you'd like to visit — say the name or ask me to book a site visit.";
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: resumeMsg }]);
       speakText(resumeMsg, true);
       return;
@@ -3957,7 +3957,7 @@ export default function App() {
     setVoiceBookingStep(null);
     setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
     setBookingProperty(null);
-    const msg = 'Site visit booking cancelled. Let me know if you want to pick another property.';
+    const msg = 'No worries — booking cancelled. Just say another property name whenever you\'re ready to try again!';
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
     if (triggerAudio) speakText(msg, true);
   };
@@ -3973,7 +3973,7 @@ export default function App() {
     setVoiceBookingStep(null);
     setVoiceBookingDraft({ visitDate: '', timeSlot: '', name: '', email: '', phone: '' });
     setBookingProperty(property);
-    const msg = `Perfect! I've opened the site visit booking form for ${property.society_name}. Choose your date, time slot, and email — I'll send the confirmation right away.`;
+    const msg = `Excellent choice! I've opened the site visit booking for ${property.society_name} — pick your date, time slot, and email, and I'll send your confirmation right away.`;
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: msg }]);
     if (triggerAudio) speakText(msg, true);
   };
@@ -4203,8 +4203,8 @@ export default function App() {
       setBuyerStep(5); // Transition to Post-Discovery Completed Mode!
 
       const noMatchMsg = nearbyAlternatives.length > 0
-        ? `Sorry, no exact matches in that area. I've put ${nearbyAlternatives.length} nearby alternatives on your screen. ${getPostDiscoveryBrowsePrompt(nearbyAlternatives)}`
-        : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
+        ? `No exact match in that area, but don't worry — I've lined up ${nearbyAlternatives.length} nearby alternatives that might surprise you! ${getPostDiscoveryBrowsePrompt(nearbyAlternatives)}`
+        : `Hmm, nothing came up this time — try tweaking your budget or neighborhood and we'll find something great together!`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: noMatchMsg }]);
       speakText(noMatchMsg, false);
       setUnrecognizedRepeatCount(0);
@@ -4294,7 +4294,7 @@ export default function App() {
     });
 
     if (!budgetConstraintMet && data.maxBudget) {
-      const budgetMsg = `I couldn't find exact matches within your budget, but these are the closest options in ${localityDisplay}. ${verdictMsg}`;
+      const budgetMsg = `I couldn't find exact matches within your budget, but these are the closest great options in ${localityDisplay}! ${verdictMsg}`;
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: budgetMsg }]);
       speakText(budgetMsg, false);
     } else {
@@ -4304,7 +4304,7 @@ export default function App() {
     setUnrecognizedRepeatCount(0);
     } catch (err) {
       console.error('Property search failed:', err);
-      const errMsg = 'Sorry, no properties found. Feel free to adjust your budget or locality preferences! Would you like us to continue?';
+      const errMsg = 'Oops — no properties matched that search. Try adjusting your budget or neighborhood and we\'ll hunt down something perfect for you!';
       setTranscriptHistory(prev => [...prev, { role: 'assistant', text: errMsg }]);
       speakText(errMsg, false);
     }
@@ -4451,7 +4451,7 @@ export default function App() {
         if (isNegativeResponse(userQuery)) {
           setAwaitingScopeContinue(false);
           handleResetSession();
-          const byeMsg = 'Session cleared. Tap Speak when you want to search rentals.';
+          const byeMsg = 'All cleared! Tap Speak whenever you\'re ready to start a fresh rental search — I\'m here to help!';
           setTranscriptHistory([{ role: 'assistant', text: byeMsg }]);
           if (triggerAudio) speakText(byeMsg, false);
           return;
@@ -4484,7 +4484,7 @@ export default function App() {
           }));
         } else if (isNo) {
           setPendingLocalityConfirm(null);
-          const promptLocality = 'Okay — which neighborhood in Bengaluru should I use instead?';
+          const promptLocality = 'No problem! Which Bengaluru neighborhood would you like me to search instead?';
           setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
           if (triggerAudio) speakText(promptLocality, true);
           return;
@@ -4509,7 +4509,7 @@ export default function App() {
       if (isClosingIntent) {
         const closingMsg = bookingCompletedRef.current
           ? BOOKING_COMPLETED_THANK_YOU
-          : `You're very welcome! I'm here 24/7 whenever you need to explore properties, check commute times, or book site visits in Bengaluru. Have a wonderful day!`;
+          : `You're very welcome — it's been a pleasure helping you! I'm here anytime you want to explore rentals, check commutes, or book site visits in Bengaluru. Have an amazing day!`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: closingMsg }]);
         if (triggerAudio) speakText(closingMsg, false);
         return;
@@ -4713,7 +4713,7 @@ export default function App() {
           || (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Indiranagar');
 
         const metroInfo = getMetroInfoForLocality(targetLoc);
-        const metroMsg = `The nearest Namma Metro station to ${targetLoc} is ${metroInfo.station} on the ${metroInfo.line}, located ${metroInfo.distance} away. Is that fine, and would you like us to continue exploring properties or check site visit slots?`;
+        const metroMsg = `Great question! The nearest Namma Metro to ${targetLoc} is ${metroInfo.station} on the ${metroInfo.line}, about ${metroInfo.distance} away — super convenient for daily commutes! Want to keep exploring properties or book a site visit?`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: metroMsg }]);
         if (triggerAudio) speakText(metroMsg, true);
         return;
@@ -4726,7 +4726,7 @@ export default function App() {
           || (currentData.locality && currentData.locality !== 'All Bengaluru' ? currentData.locality : null)
           || (selectedLocality !== 'All Bengaluru' ? selectedLocality : 'Indiranagar');
 
-        const safetyMsg = `${targetLoc} maintains continuous CCTV coverage and 24/7 Karnataka Police patrol beats, reporting low night-time crime incidents based on official 2025 records. Is that fine, and would you like us to continue exploring properties or check site visit slots?`;
+        const safetyMsg = `${targetLoc} is well covered with CCTV and 24/7 Karnataka Police patrols, with low night-time crime based on 2025 records — a solid choice for peace of mind! Shall we keep exploring properties or book a site visit?`;
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: safetyMsg }]);
         if (triggerAudio) speakText(safetyMsg, true);
         return;
@@ -4738,7 +4738,7 @@ export default function App() {
       );
       if (currentStep <= 1 && !hasSearchCriteria && !isRentalIntent(userQuery) && !alreadyHasLocality) {
         setBuyerStep(1);
-        const promptLocality = 'Which neighborhood or locality in Bengaluru do you prefer?';
+        const promptLocality = "Let's find the perfect spot! Which Bengaluru neighborhood are you most interested in renting in?";
         setTranscriptHistory(prev => [...prev, { role: 'assistant', text: promptLocality }]);
         if (triggerAudio) speakText(promptLocality, true);
         return;
@@ -4894,7 +4894,7 @@ export default function App() {
 
     const defaultMsg = shortlist.length > 0
       ? getPostDiscoveryBrowsePrompt(shortlist)
-      : `Sorry, no properties found. Feel free to adjust your budget or locality preferences!`;
+      : `Nothing matched just yet — tweak your budget or neighborhood and let's find something you'll love!`;
 
     setTranscriptHistory(prev => [...prev, { role: 'assistant', text: defaultMsg }]);
     if (triggerAudio) speakText(defaultMsg, false);

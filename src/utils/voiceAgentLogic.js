@@ -126,9 +126,9 @@ export function isAmbiguousPostDiscoveryUtterance(query) {
 export function getPostDiscoveryBrowsePrompt(shortlist = []) {
   if (shortlist.length === 1) {
     const name = shortlist[0]?.society_name || 'the property on your screen';
-    return `You have one match — ${name}. Say "book a site visit" or tap Schedule Visit on the card.`;
+    return `Great news — I've got a strong match for you: ${name}! Say the property name or "book a site visit" and I'll get your visit scheduled right away.`;
   }
-  return 'Have a look at the properties on your screen and tell me which one you would like to book a site visit for.';
+  return "I've pulled together some promising options on your screen — take a look and tell me which one you'd love to visit. Just say the name or ask me to book a site visit!";
 }
 
 export function filterPropertiesByLocalities(properties, targetLocalities, matchesLocalityFn) {
@@ -148,7 +148,7 @@ export function brokerSlotUnavailable() {
 /** Buyer step after a site visit is successfully booked (BUG 052). */
 export const BUYER_STEP_BOOKING_COMPLETED = 6;
 
-export const BOOKING_COMPLETED_THANK_YOU = 'Thank you for choosing PropertyScout!';
+export const BOOKING_COMPLETED_THANK_YOU = 'Thank you for choosing PropertyScout — we can\'t wait to help you find your perfect home!';
 
 export function isBookingCompletedStep(step) {
   return Number(step) === BUYER_STEP_BOOKING_COMPLETED;
@@ -164,13 +164,13 @@ export function buildBookingCompletedMessage(details = {}) {
   const parts = [];
   if (details.propertyName && details.visitDate && details.timeSlot) {
     parts.push(
-      `Done! Your site visit for ${details.propertyName} is confirmed on ${details.visitDate} at ${details.timeSlot}.`
+      `You're all set! Your site visit for ${details.propertyName} is confirmed on ${details.visitDate} at ${details.timeSlot}.`
     );
   } else if (details.propertyName) {
-    parts.push(`Done! Your site visit for ${details.propertyName} is confirmed.`);
+    parts.push(`You're all set! Your site visit for ${details.propertyName} is confirmed.`);
   }
-  if (details.email) parts.push(`Confirmation email sent to ${details.email}.`);
-  if (details.brokerName) parts.push(`${details.brokerName} will meet you at the property.`);
+  if (details.email) parts.push(`I've sent a confirmation to ${details.email}.`);
+  if (details.brokerName) parts.push(`${details.brokerName} will be there to welcome you at the property.`);
   parts.push(BOOKING_COMPLETED_THANK_YOU);
   return parts.join(' ');
 }

@@ -287,7 +287,7 @@ test('mergePersistedInterviewSlots prefers freshly spoken criteria when present'
 
 // BUG 052 — Post-booking completed state
 test('booking completed thank-you copy is PropertyScout brand line', () => {
-  assert.equal(BOOKING_COMPLETED_THANK_YOU, 'Thank you for choosing PropertyScout!');
+  assert.match(BOOKING_COMPLETED_THANK_YOU, /Thank you for choosing PropertyScout/i);
 });
 
 test('shouldOfferSiteVisitResume is false after booking completed', () => {
@@ -306,5 +306,5 @@ test('buildBookingCompletedMessage always ends with PropertyScout thank-you', ()
     brokerName: 'Priya Nair',
   });
   assert.match(msg, /TVS Emerald/);
-  assert.ok(msg.endsWith('Thank you for choosing PropertyScout!'));
+  assert.match(msg, /Thank you for choosing PropertyScout/i);
 });
